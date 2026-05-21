@@ -28,13 +28,56 @@
             line-height: 24px;
         }
 
-        .page-turn-enter {
-            animation: turnPageIn 0.6s cubic-bezier(0.645, 0.045, 0.355, 1) forwards;
+        /* --- HIỆU ỨNG LẬT TRANG MỚI --- */
+        .flip-out-left {
+            animation: flipOutLeftAnim 0.5s ease-in forwards;
             transform-origin: left center;
+            transform-style: preserve-3d;
         }
-        @keyframes turnPageIn {
-            0% { transform: perspective(1200px) rotateY(90deg); opacity: 0; }
-            100% { transform: perspective(1200px) rotateY(0deg); opacity: 1; }
+        @keyframes flipOutLeftAnim {
+            0% { transform: perspective(2000px) rotateY(0deg); opacity: 1; }
+            100% { transform: perspective(2000px) rotateY(-180deg); opacity: 0; }
+        }
+
+        .flip-in-right {
+            animation: flipInRightAnim 0.6s ease-out forwards;
+            transform-origin: left center;
+            transform-style: preserve-3d;
+        }
+        @keyframes flipInRightAnim {
+            0% { transform: perspective(2000px) rotateY(-180deg); opacity: 0; }
+            100% { transform: perspective(2000px) rotateY(0deg); opacity: 1; }
+        }
+
+        .fade-in {
+            animation: fadeInAnim 0.3s ease-in forwards;
+        }
+        @keyframes fadeInAnim {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        /* --- CSS CHO HIỆU ỨNG ĐÓNG MỞ SÁCH --- */
+        .perspective-2000 {
+            perspective: 2000px;
+        }
+        .book-cover {
+            transform-origin: left center;
+            transition: transform 1.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+            transform-style: preserve-3d;
+        }
+        .book-cover.is-open {
+            transform: rotateY(-155deg); /* Lật sang trái, nghiêng nhẹ tạo cảm giác sách đang mở */
+        }
+        .backface-hidden {
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+        }
+        .rotate-y-180 {
+            transform: rotateY(180deg);
+        }
+        .book-spine {
+            background: linear-gradient(to right, #1f120d 0%, #3b271d 20%, #4a3525 50%, #3b271d 80%, #1f120d 100%);
         }
 
         ::-webkit-scrollbar { width: 6px; }
@@ -80,7 +123,6 @@
             console.error("Lỗi kết nối Firebase:", error);
         }
 
-        // Bổ sung thêm rất nhiều Sticker mới
         const STICKER_TEMPLATES = {
             phuongvi: { name: "Hoa Phượng", content: "https://cdn-icons-png.flaticon.com/512/3209/3209012.png" },
             plane: { name: "Máy Bay Giấy", content: "https://cdn-icons-png.flaticon.com/512/2165/2165734.png" },
@@ -93,7 +135,15 @@
             balloon: { name: "Bóng Bay", content: "https://cdn-icons-png.flaticon.com/512/4370/4370605.png" },
             rainbow: { name: "Cầu Vồng", content: "https://cdn-icons-png.flaticon.com/512/3063/3063162.png" },
             gift: { name: "Hộp Quà", content: "https://cdn-icons-png.flaticon.com/512/4213/4213958.png" },
-            camera: { name: "Máy Ảnh", content: "https://cdn-icons-png.flaticon.com/512/3178/3178158.png" }
+            camera: { name: "Máy Ảnh", content: "https://cdn-icons-png.flaticon.com/512/3178/3178158.png" },
+            gradcap: { name: "Mũ Cử Nhân", content: "https://cdn-icons-png.flaticon.com/512/2097/2097723.png" },
+            backpack: { name: "Balo", content: "https://cdn-icons-png.flaticon.com/512/2436/2436737.png" },
+            books: { name: "Sách Vở", content: "https://cdn-icons-png.flaticon.com/512/2232/2232688.png" },
+            bicycle: { name: "Xe Đạp", content: "https://cdn-icons-png.flaticon.com/512/2972/2972185.png" },
+            medal: { name: "Huy Chương", content: "https://cdn-icons-png.flaticon.com/512/3153/3153123.png" },
+            music: { name: "Nốt Nhạc", content: "https://cdn-icons-png.flaticon.com/512/3295/3295074.png" },
+            pencil: { name: "Bút Chì", content: "https://cdn-icons-png.flaticon.com/512/3874/3874136.png" },
+            palette: { name: "Bảng Màu", content: "https://cdn-icons-png.flaticon.com/512/2916/2916120.png" }
         };
 
         const formatDate = (timestamp) => {
@@ -108,6 +158,13 @@
             const [currentPageIdx, setCurrentPageIdx] = useState(0);
             const [pageFlipKey, setPageFlipKey] = useState(0); 
             const [editUnlocked, setEditUnlocked] = useState({}); 
+            
+            // State quản lý việc Đóng/Mở sổ
+            const [isBookOpen, setIsBookOpen] = useState(false);
+            
+            // State quản lý Animation chuyển trang
+            const [animState, setAnimState] = useState('fade-in');
+            const [isAnimating, setIsAnimating] = useState(false);
             
             const [textInput, setTextInput] = useState('');
             const [inkColor, setInkColor] = useState('violet');
@@ -164,14 +221,28 @@
             const isUnlocked = currentPage ? editUnlocked[currentPage.id] : false;
 
             const turnPage = (direction) => {
+                if (isAnimating) return; // Chống spam click liên tục
+                
                 if (direction === 'next' && currentPageIdx < pages.length - 1) {
-                    setCurrentPageIdx(prev => prev + 1);
-                    setPageFlipKey(prev => prev + 1);
+                    setIsAnimating(true);
+                    setAnimState('flip-out-left'); // Trang hiện tại lật đi
                     setSelectedItemId(null);
+                    
+                    setTimeout(() => {
+                        setCurrentPageIdx(prev => prev + 1);
+                        setAnimState('fade-in'); // Trang mới hiện ra
+                        setPageFlipKey(prev => prev + 1);
+                        setTimeout(() => setIsAnimating(false), 300);
+                    }, 500); // Đợi lật úp xong
+                    
                 } else if (direction === 'prev' && currentPageIdx > 0) {
+                    setIsAnimating(true);
                     setCurrentPageIdx(prev => prev - 1);
-                    setPageFlipKey(prev => prev + 1);
+                    setAnimState('flip-in-right'); // Trang cũ lật về
                     setSelectedItemId(null);
+                    setPageFlipKey(prev => prev + 1);
+                    
+                    setTimeout(() => setIsAnimating(false), 600); // Đợi lật về xong
                 }
             };
 
@@ -195,6 +266,7 @@
                     
                     setTimeout(() => {
                         setCurrentPageIdx(Math.max(0, pagesLengthRef.current - 1));
+                        setAnimState('fade-in');
                         setPageFlipKey(prev => prev + 1);
                     }, 800);
 
@@ -259,7 +331,6 @@
                 reader.onload = (event) => {
                     const img = new Image();
                     img.onload = () => {
-                        // Tự động thu nhỏ ảnh để không làm nặng database
                         const canvas = document.createElement('canvas');
                         const MAX_WIDTH = 400;
                         const MAX_HEIGHT = 400;
@@ -283,7 +354,6 @@
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
 
-                        // Lấy base64 và dán vào vở luôn
                         const base64Image = canvas.toDataURL('image/jpeg', 0.8);
                         
                         addItemToPage({ 
@@ -292,7 +362,6 @@
                         });
                         showToast("Đã tải lên và dán ảnh thành công!");
                         
-                        // Reset input file để chọn lại
                         if (fileInputRef.current) fileInputRef.current.value = '';
                     };
                     img.src = event.target.result;
@@ -389,8 +458,8 @@
 
             return (
                 <div className="min-h-screen flex flex-col font-sans">
-                    {/* NAV BAR */}
-                    <nav className="bg-rose-950 text-rose-100 px-4 py-3 shadow-lg flex flex-col md:flex-row justify-between items-center gap-4 z-40 sticky top-0 border-b-2 border-rose-800/50">
+                    {/* NAV BAR: Nâng z-index lên 60 để luôn nổi bật */}
+                    <nav className="bg-rose-950 text-rose-100 px-4 py-3 shadow-lg flex flex-col md:flex-row justify-between items-center gap-4 z-[60] sticky top-0 border-b-2 border-rose-800/50">
                         <div className="flex items-center gap-3">
                             <span className="text-3xl">🎒</span>
                             <div>
@@ -401,7 +470,7 @@
 
                         {/* Pagination */}
                         <div className="flex items-center gap-4 bg-rose-900/60 px-4 py-2 rounded-full border border-rose-700/50">
-                            <button onClick={() => turnPage('prev')} disabled={currentPageIdx === 0 || !currentPage} className="hover:text-amber-300 disabled:opacity-30 transition">
+                            <button onClick={() => turnPage('prev')} disabled={currentPageIdx === 0 || !currentPage || isAnimating} className="hover:text-amber-300 disabled:opacity-30 transition">
                                 <i className="fa-solid fa-chevron-left fa-lg"></i>
                             </button>
                             <div className="text-sm font-semibold min-w-[120px] text-center text-amber-200">
@@ -410,7 +479,7 @@
                                     Trang {pages.length > 0 ? currentPageIdx + 1 : 0} / {pages.length}
                                 </span>
                             </div>
-                            <button onClick={() => turnPage('next')} disabled={currentPageIdx === pages.length - 1 || !currentPage} className="hover:text-amber-300 disabled:opacity-30 transition">
+                            <button onClick={() => turnPage('next')} disabled={currentPageIdx === pages.length - 1 || !currentPage || isAnimating} className="hover:text-amber-300 disabled:opacity-30 transition">
                                 <i className="fa-solid fa-chevron-right fa-lg"></i>
                             </button>
                         </div>
@@ -438,11 +507,11 @@
                           onPointerUp={handlePointerUp}
                           onPointerLeave={handlePointerUp}>
                         
-                        {}
-                        <section className="md:col-span-4 bg-stone-900/60 p-5 rounded-[2rem] border border-stone-800 shadow-2xl backdrop-blur-md h-fit sticky top-24">
+                        {/* CỘT TRÁI: KHAY ĐỒ DÙNG - Nâng z-index lên 50 để nổi lên trên Bìa sổ */}
+                        <section className="md:col-span-4 bg-stone-900/60 p-5 rounded-[2rem] border border-stone-800 shadow-2xl backdrop-blur-md h-fit sticky top-24 relative z-50">
                             <h2 className="text-xl font-bold text-amber-200 border-b border-stone-700 pb-3 mb-4">🎨 Khay Đồ Dùng</h2>
                             
-                            <div className={`space-y-5 ${!isUnlocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <div className={`space-y-5 ${(!isUnlocked || !isBookOpen) ? 'opacity-50 pointer-events-none' : 'transition-opacity duration-500'}`}>
                                 {/* Tool 1 */}
                                 <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
                                     <label className="text-xs text-stone-400 font-bold mb-2 block">1. Viết lời chúc (Mực máy)</label>
@@ -486,112 +555,157 @@
                             </div>
                         </section>
 
-                        {}
-                        <section className="md:col-span-8 perspective-1000">
-                            <div className="bg-[#4a3525] p-3 md:p-5 rounded-[2rem] shadow-2xl border-[6px] border-[#2d1b13] relative overflow-hidden h-full min-h-[700px] flex">
-                                <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-stone-950 via-stone-800 to-transparent z-20 border-r border-black/30"></div>
-                                <div className="w-full h-full relative pl-6">
-                                    <div 
-                                        key={pageFlipKey} 
-                                        ref={notebookRef}
-                                        className="notebook-paper w-full h-full min-h-[660px] rounded-r-2xl shadow-inner relative overflow-hidden page-turn-enter"
-                                    >
-                                        {!currentPage ? (
-                                            <div className="absolute inset-0 flex flex-col items-center justify-center opacity-70 px-4 text-center">
-                                                <i className="fa-solid fa-hourglass-half fa-spin text-5xl mb-4 text-amber-800"></i>
-                                                <p className="font-handwriting text-3xl text-stone-700 mb-2">Đang kết nối...</p>
+                        {/* CỘT PHẢI: CUỐN SỔ BÌA CỨNG 3D */}
+                        <section className="md:col-span-8 perspective-2000 relative">
+                            {isBookOpen && (
+                                <button onClick={() => setIsBookOpen(false)} className="absolute -top-4 right-8 z-50 bg-stone-800 text-amber-200 px-5 py-2 rounded-b-2xl shadow-xl hover:bg-stone-700 hover:text-amber-100 transition-all font-bold text-sm border-x border-b border-stone-600">
+                                    <i className="fa-solid fa-book-journal-whills"></i> Gập sổ lại
+                                </button>
+                            )}
+
+                            <div className="relative w-full max-w-[650px] mx-auto h-full min-h-[700px] mt-2">
+                                {/* BÌA SỔ (COVER) - Giảm z-index xuống 30 để luồn dưới Khay Đồ Dùng khi mở ra */}
+                                <div 
+                                    className={`book-cover absolute inset-0 z-30 w-full h-full shadow-[20px_0_30px_rgba(0,0,0,0.5)] rounded-r-3xl border-l-[16px] border-[#1a0f0a] ${isBookOpen ? 'is-open pointer-events-none' : 'cursor-pointer hover:scale-[1.02]'}`}
+                                    onClick={() => !isBookOpen && setIsBookOpen(true)}
+                                >
+                                    {/* Mặt trước của Bìa */}
+                                    <div className="absolute inset-0 backface-hidden bg-[#4a3525] rounded-r-3xl border-4 border-[#2d1b13] flex flex-col items-center justify-center overflow-hidden">
+                                        <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#000_1px,transparent_1px)] [background-size:10px_10px]"></div>
+                                        <div className="w-[85%] h-[90%] border-[3px] border-amber-500/40 rounded-2xl p-6 flex flex-col items-center justify-center relative bg-[#3d2b1f] shadow-inner">
+                                            <div className="absolute top-4 left-4 right-4 bottom-4 border border-amber-500/20 rounded-xl pointer-events-none"></div>
+                                            
+                                            <div className="bg-amber-100/10 p-5 rounded-full mb-6 shadow-lg border border-amber-500/30">
+                                                <i className="fa-solid fa-graduation-cap text-7xl text-amber-400 drop-shadow-lg"></i>
                                             </div>
-                                        ) : (
-                                            <>
-                                                <div className="absolute top-4 left-12 right-6 border-b border-dashed border-stone-400 pb-2">
-                                                    <span className="text-xs text-stone-500 font-bold uppercase">Người viết: </span>
-                                                    <span className="text-xl font-bold font-serif-title text-amber-900 ml-2">{currentPage.author}</span>
-                                                    <span className="float-right text-[10px] text-stone-400 mt-2">
-                                                        {formatDate(currentPage.createdAt)}
-                                                    </span>
+                                            
+                                            <h1 className="text-5xl text-center font-bold font-serif-title text-amber-100 tracking-widest drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] leading-tight">
+                                                KỶ NIỆM<br/>PHƯỢNG VĨ
+                                            </h1>
+                                            
+                                            <div className="mt-12 bg-amber-900/60 px-6 py-2 rounded-full border border-amber-700/50">
+                                                <p className="text-amber-200 font-handwriting text-2xl animate-pulse flex items-center gap-2">
+                                                    Nhấn để mở sổ <i className="fa-solid fa-hand-pointer"></i>
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Mặt sau của Bìa (Phần trang giấy bên trái khi lật ra) */}
+                                    <div className="absolute inset-0 backface-hidden rotate-y-180 bg-[#faf6eb] rounded-l-3xl shadow-inner border-r-[16px] border-[#2d1b13] flex items-center justify-center overflow-hidden">
+                                        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#5a3d28_1px,transparent_1px)] [background-size:16px_16px]"></div>
+                                        <div className="text-center rotate-[-10deg] opacity-60">
+                                            <i className="fa-solid fa-camera-retro text-6xl text-stone-300 mb-4"></i>
+                                            <p className="font-handwriting text-4xl text-stone-400">Nơi lưu giữ<br/>thanh xuân...</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* PHẦN TRANG GIẤY BÊN TRONG (RIGHT PAGE) */}
+                                <div className={`absolute inset-0 bg-[#4a3525] p-2 md:p-4 rounded-r-3xl shadow-2xl border-l-[16px] border-[#2d1b13] transition-opacity duration-[1.2s] ${isBookOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                                    <div className="absolute left-0 top-0 bottom-0 w-10 book-spine z-20 border-r border-black/40"></div>
+                                    <div className="w-full h-full relative pl-8">
+                                        <div 
+                                            key={pageFlipKey} 
+                                            ref={notebookRef}
+                                            className={`notebook-paper w-full h-full min-h-[660px] rounded-r-2xl shadow-inner relative overflow-hidden ${animState}`}
+                                        >
+                                            {!currentPage ? (
+                                                <div className="absolute inset-0 flex flex-col items-center justify-center opacity-70 px-4 text-center">
+                                                    <i className="fa-solid fa-hourglass-half fa-spin text-5xl mb-4 text-amber-800"></i>
+                                                    <p className="font-handwriting text-3xl text-stone-700 mb-2">Đang tải trang...</p>
                                                 </div>
+                                            ) : (
+                                                <>
+                                                    <div className="absolute top-4 left-12 right-6 border-b border-dashed border-stone-400 pb-2">
+                                                        <span className="text-xs text-stone-500 font-bold uppercase">Người viết: </span>
+                                                        <span className="text-xl font-bold font-serif-title text-amber-900 ml-2">{currentPage.author}</span>
+                                                        <span className="float-right text-[10px] text-stone-400 mt-2">
+                                                            {formatDate(currentPage.createdAt)}
+                                                        </span>
+                                                    </div>
 
-                                                {currentPage.items?.map((item) => {
-                                                    const isSelected = selectedItemId === item.id;
-                                                    return (
-                                                        <div 
-                                                            key={item.id}
-                                                            onPointerDown={(e) => handlePointerDown(e, item)}
-                                                            className={`absolute cursor-${isUnlocked ? 'grab' : 'default'} ${draggingItem?.id === item.id ? 'cursor-grabbing opacity-80' : ''} touch-none select-none`}
-                                                            style={{
-                                                                left: `${item.x}%`, top: `${item.y}%`,
-                                                                transform: `translate(-50%, -50%)`,
-                                                                zIndex: isSelected ? 30 : 10
-                                                            }}
-                                                        >
-                                                            {/* HỘP BAO QUANH PHẦN TỬ ĐỂ CHỨA NÚT Ở 4 GÓC */}
+                                                    {currentPage.items?.map((item) => {
+                                                        const isSelected = selectedItemId === item.id;
+                                                        return (
                                                             <div 
-                                                                className={`relative transition-transform duration-100 ${isSelected && isUnlocked ? 'ring-2 ring-dashed ring-amber-500 bg-white/40 p-2 rounded-lg' : ''}`}
-                                                                style={{ transform: `scale(${item.scale}) rotate(${item.rotate}deg)` }}
+                                                                key={item.id}
+                                                                onPointerDown={(e) => handlePointerDown(e, item)}
+                                                                className={`absolute cursor-${isUnlocked ? 'grab' : 'default'} ${draggingItem?.id === item.id ? 'cursor-grabbing opacity-80' : ''} touch-none select-none`}
+                                                                style={{
+                                                                    left: `${item.x}%`, top: `${item.y}%`,
+                                                                    transform: `translate(-50%, -50%)`,
+                                                                    zIndex: isSelected ? 30 : 10
+                                                                }}
                                                             >
-                                                                {isSelected && isUnlocked && (
-                                                                    <>
-                                                                        {/* NÚT HOÀN THÀNH */}
-                                                                        <button 
-                                                                            onPointerDown={(e) => { e.stopPropagation(); setSelectedItemId(null); }} 
-                                                                            className="absolute -top-12 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-emerald-500 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-emerald-600 hover:scale-105 pointer-events-auto transition z-50 font-bold text-xs gap-2 whitespace-nowrap"
-                                                                        >
-                                                                            <i className="fa-solid fa-check"></i> Đặt ở đây
-                                                                        </button>
+                                                                <div 
+                                                                    className={`relative transition-transform duration-100 ${isSelected && isUnlocked ? 'ring-2 ring-dashed ring-amber-500 bg-white/40 p-2 rounded-lg' : ''}`}
+                                                                    style={{ transform: `scale(${item.scale}) rotate(${item.rotate}deg)` }}
+                                                                >
+                                                                    {isSelected && isUnlocked && (
+                                                                        <>
+                                                                            {/* NÚT HOÀN THÀNH */}
+                                                                            <button 
+                                                                                onPointerDown={(e) => { e.stopPropagation(); setSelectedItemId(null); }} 
+                                                                                className="absolute -top-12 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-emerald-500 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-emerald-600 hover:scale-105 pointer-events-auto transition z-50 font-bold text-xs gap-2 whitespace-nowrap"
+                                                                            >
+                                                                                <i className="fa-solid fa-check"></i> Đặt ở đây
+                                                                            </button>
 
-                                                                        {/* THÙNG RÁC XÓA */}
-                                                                        <button 
-                                                                            onPointerDown={(e) => { e.stopPropagation(); deleteItem(item.id); }} 
-                                                                            className="absolute -bottom-4 -right-4 w-8 h-8 bg-rose-500 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-rose-600 hover:scale-110 pointer-events-auto transition z-40"
-                                                                        >
-                                                                            <i className="fa-solid fa-trash-can text-sm"></i>
-                                                                        </button>
-                                                                        
-                                                                        {/* PHÓNG TO */}
-                                                                        <button 
-                                                                            onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'scale', 1); }} 
-                                                                            className="absolute -top-3 -right-3 w-7 h-7 bg-emerald-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-emerald-600 hover:scale-110 pointer-events-auto transition z-40"
-                                                                        >
-                                                                            <i className="fa-solid fa-plus text-xs"></i>
-                                                                        </button>
-                                                                        
-                                                                        {/* THU NHỎ */}
-                                                                        <button 
-                                                                            onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'scale', -1); }} 
-                                                                            className="absolute -top-3 -left-3 w-7 h-7 bg-stone-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-stone-600 hover:scale-110 pointer-events-auto transition z-40"
-                                                                        >
-                                                                            <i className="fa-solid fa-minus text-xs"></i>
-                                                                        </button>
-                                                                        
-                                                                        {/* XOAY VÒNG */}
-                                                                        <button 
-                                                                            onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'rotate', 1); }} 
-                                                                            className="absolute -bottom-3 -left-3 w-7 h-7 bg-sky-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-sky-600 hover:scale-110 pointer-events-auto transition z-40"
-                                                                        >
-                                                                            <i className="fa-solid fa-rotate-right text-xs"></i>
-                                                                        </button>
-                                                                    </>
-                                                                )}
+                                                                            {/* THÙNG RÁC XÓA */}
+                                                                            <button 
+                                                                                onPointerDown={(e) => { e.stopPropagation(); deleteItem(item.id); }} 
+                                                                                className="absolute -bottom-4 -right-4 w-8 h-8 bg-rose-500 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-rose-600 hover:scale-110 pointer-events-auto transition z-40"
+                                                                            >
+                                                                                <i className="fa-solid fa-trash-can text-sm"></i>
+                                                                            </button>
+                                                                            
+                                                                            {/* PHÓNG TO */}
+                                                                            <button 
+                                                                                onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'scale', 1); }} 
+                                                                                className="absolute -top-3 -right-3 w-7 h-7 bg-emerald-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-emerald-600 hover:scale-110 pointer-events-auto transition z-40"
+                                                                            >
+                                                                                <i className="fa-solid fa-plus text-xs"></i>
+                                                                            </button>
+                                                                            
+                                                                            {/* THU NHỎ */}
+                                                                            <button 
+                                                                                onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'scale', -1); }} 
+                                                                                className="absolute -top-3 -left-3 w-7 h-7 bg-stone-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-stone-600 hover:scale-110 pointer-events-auto transition z-40"
+                                                                            >
+                                                                                <i className="fa-solid fa-minus text-xs"></i>
+                                                                            </button>
+                                                                            
+                                                                            {/* XOAY VÒNG */}
+                                                                            <button 
+                                                                                onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'rotate', 1); }} 
+                                                                                className="absolute -bottom-3 -left-3 w-7 h-7 bg-sky-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-sky-600 hover:scale-110 pointer-events-auto transition z-40"
+                                                                            >
+                                                                                <i className="fa-solid fa-rotate-right text-xs"></i>
+                                                                            </button>
+                                                                        </>
+                                                                    )}
 
-                                                                {/* NỘI DUNG CHÍNH */}
-                                                                <div className="pointer-events-none">
-                                                                    {item.type === 'text' && <div className={`whitespace-nowrap text-xl font-semibold ${getTextColorClass(item.color)} ${item.font}`}>{item.content}</div>}
-                                                                    {item.type === 'sticker' && <img src={item.content} className="w-16 h-16 object-contain drop-shadow-sm" draggable="false" />}
-                                                                    {item.type === 'image' && <div className="p-2 bg-white shadow-md border border-stone-200 rotate-1 max-w-[200px]"><img src={item.content} className="w-full h-auto" draggable="false" /></div>}
+                                                                    {/* NỘI DUNG CHÍNH */}
+                                                                    <div className="pointer-events-none">
+                                                                        {item.type === 'text' && <div className={`whitespace-nowrap text-xl font-semibold ${getTextColorClass(item.color)} ${item.font}`}>{item.content}</div>}
+                                                                        {item.type === 'sticker' && <img src={item.content} className="w-16 h-16 object-contain drop-shadow-sm" draggable="false" />}
+                                                                        {item.type === 'image' && <div className="p-2 bg-white shadow-md border border-stone-200 rotate-1 max-w-[200px]"><img src={item.content} className="w-full h-auto" draggable="false" /></div>}
+                                                                    </div>
                                                                 </div>
                                                             </div>
+                                                        );
+                                                    })}
+                                                    
+                                                    {currentPage.items?.length === 0 && (
+                                                        <div className="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none">
+                                                            <i className="fa-solid fa-pen-nib text-5xl mb-4 text-stone-500"></i>
+                                                            <p className="font-handwriting text-2xl text-stone-600">Trang giấy trắng tinh...</p>
                                                         </div>
-                                                    );
-                                                })}
-                                                
-                                                {currentPage.items?.length === 0 && (
-                                                    <div className="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none">
-                                                        <i className="fa-solid fa-pen-nib text-5xl mb-4 text-stone-500"></i>
-                                                        <p className="font-handwriting text-2xl text-stone-600">Trang giấy trắng tinh...</p>
-                                                    </div>
-                                                )}
-                                            </>
-                                        )}
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
