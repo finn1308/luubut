@@ -100,6 +100,14 @@
             daisy: { name: "Cúc Họa Mi", icon: "🌼", content: "https://cdn-icons-png.flaticon.com/512/1087/1087340.png" }
         };
 
+        // Hàm hỗ trợ format hiển thị thời gian
+        const formatDate = (timestamp) => {
+            if (!timestamp) return 'Mới đây';
+            if (typeof timestamp === 'number') return new Date(timestamp).toLocaleDateString('vi-VN');
+            if (timestamp.toDate) return new Date(timestamp.toDate()).toLocaleDateString('vi-VN');
+            return 'Mới đây';
+        };
+
         function App() {
             // State dữ liệu trang
             const [pages, setPages] = useState([]);
@@ -130,7 +138,7 @@
             // Hàm hiện thông báo góc màn hình
             const showToast = (msg) => {
                 setToast(msg);
-                setTimeout(() => setToast(''), 3000);
+                setTimeout(() => setToast(''), 4000);
             };
 
             // ==========================================
@@ -154,7 +162,9 @@
                             author: "Tập Thể Lớp Chúng Mình",
                             password: "",
                             items: [],
-                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                            createdAt: Date.now() // Sử dụng Date.now() thay cho serverTimestamp để ko bị lỗi tải lại
+                        }).catch(err => {
+                            console.error("Lỗi tạo trang bìa:", err);
                         });
                     } else {
                         setPages(loadedPages);
@@ -165,7 +175,11 @@
                     }
                 }, error => {
                     console.error("Lỗi tải dữ liệu:", error);
-                    showToast("Mất kết nối mạng!");
+                    if (error.message.includes("Missing or insufficient permissions")) {
+                        alert("⚠️ LỖI QUYỀN TRUY CẬP (FIREBASE RULES) ⚠️\n\nBạn chưa cấp quyền Đọc/Ghi trên Firebase. Dữ liệu sẽ không được lưu!\n\nHướng dẫn sửa:\n1. Vào Firebase Console -> Firestore Database\n2. Chọn tab 'Rules' (Quy tắc)\n3. Đổi chữ 'false' thành 'true' (allow read, write: if true;)\n4. Bấm Publish và F5 lại trang này.");
+                    } else {
+                        showToast("Mất kết nối mạng! Vui lòng thử lại.");
+                    }
                 });
 
                 return () => unsubscribe();
@@ -203,12 +217,12 @@
                         author: author,
                         password: pwd,
                         items: [],
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        createdAt: Date.now()
                     });
                     
                     setEditUnlocked(prev => ({ ...prev, [newDoc.id]: true }));
                     setShowCreateModal(false);
-                    showToast(`Đã tạo trang riêng cho ${author}!`);
+                    showToast(`Đã lưu trang riêng cho ${author} vĩnh viễn!`);
                     
                     // Chuyển đến trang cuối (trang vừa tạo)
                     setTimeout(() => {
@@ -217,7 +231,12 @@
                     }, 500);
 
                 } catch (error) {
-                    showToast("Lỗi khi tạo trang. Kiểm tra lại Rules Firebase.");
+                    console.error("Lỗi khi tạo trang:", error);
+                    if (error.message.includes("permission")) {
+                        alert("❌ KHÔNG THỂ LƯU! Bạn chưa bật quyền Ghi (Rules) trong Firebase.\nHãy sửa Rules thành 'true' rồi thử lại nhé!");
+                    } else {
+                        showToast("Lỗi khi tạo trang. Vui lòng thử lại.");
+                    }
                 }
             };
 
@@ -248,8 +267,12 @@
                 try {
                     await db.collection('pages').doc(currentPage.id).update({ items: updatedItems });
                 } catch (error) {
-                    console.error(error);
-                    showToast("Lỗi lưu phần tử.");
+                    console.error("Lỗi lưu item:", error);
+                    if (error.message.includes("permission")) {
+                        alert("❌ KHÔNG THỂ LƯU! Bạn chưa bật quyền Ghi (Rules) trong Firebase.");
+                    } else {
+                        showToast("Lỗi khi dán lên trang.");
+                    }
                 }
             };
 
@@ -405,9 +428,16 @@
                 // Lấy tọa độ cuối cùng và lưu lên DB
                 const finalItem = currentPage.items.find(i => i.id === draggingItem.id);
                 if (finalItem) {
-                    await db.collection('pages').doc(currentPage.id).update({
-                        items: currentPage.items
-                    });
+                    try {
+                        await db.collection('pages').doc(currentPage.id).update({
+                            items: currentPage.items
+                        });
+                    } catch(err) {
+                        console.error("Lỗi kéo thả cập nhật lên cloud:", err);
+                        if(err.message.includes("permission")) {
+                             alert("Lỗi: Quá trình lưu di chuyển bị chặn do Firebase Rules.");
+                        }
+                    }
                 }
                 setDraggingItem(null);
             };
@@ -535,140 +565,4 @@
                             <div class="bg-[#4a3525] p-3 md:p-5 rounded-[2rem] shadow-2xl border-[6px] border-[#2d1b13] relative overflow-hidden h-full min-h-[700px] flex">
                                 
                                 {/* Gáy sách lò xo ảo */}
-                                <div class="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-stone-950 via-stone-800 to-transparent z-20 border-r border-black/30"></div>
-                                
-                                {/* Container chứa trang giấy */}
-                                <div class="w-full h-full relative pl-6">
-                                    {/* Trang giấy hiển thị */}
-                                    {currentPage && (
-                                        <div 
-                                            key={pageFlipKey} 
-                                            ref={notebookRef}
-                                            class="notebook-paper w-full h-full min-h-[660px] rounded-r-2xl shadow-inner relative overflow-hidden page-turn-enter"
-                                            onClick={() => setSelectedItemId(null)}
-                                        >
-                                            {/* Tiêu đề góc */}
-                                            <div class="absolute top-4 left-12 right-6 border-b border-dashed border-stone-400 pb-2">
-                                                <span class="text-xs text-stone-500 font-bold uppercase">Người viết: </span>
-                                                <span class="text-xl font-bold font-serif-title text-amber-900 ml-2">{currentPage.author}</span>
-                                                <span class="float-right text-[10px] text-stone-400 mt-2">
-                                                    {currentPage.createdAt?.toDate ? new Date(currentPage.createdAt.toDate()).toLocaleDateString('vi-VN') : ''}
-                                                </span>
-                                            </div>
-
-                                            {/* RENDER ITEMS TRÊN GIẤY */}
-                                            {currentPage.items?.map((item) => {
-                                                const isSelected = selectedItemId === item.id;
-                                                return (
-                                                    <div 
-                                                        key={item.id}
-                                                        onPointerDown={(e) => handlePointerDown(e, item)}
-                                                        class={`absolute cursor-${isUnlocked ? 'grab' : 'default'} ${draggingItem?.id === item.id ? 'cursor-grabbing opacity-80 scale-105' : ''} transition-transform duration-100 touch-none`}
-                                                        style={{
-                                                            left: `${item.x}%`,
-                                                            top: `${item.y}%`,
-                                                            transform: `translate(-50%, -50%) scale(${item.scale}) rotate(${item.rotate}deg)`,
-                                                            zIndex: isSelected ? 30 : 10
-                                                        }}
-                                                    >
-                                                        {/* Control Bar khi được chọn */}
-                                                        {isSelected && isUnlocked && (
-                                                            <div class="absolute -top-12 left-1/2 -translate-x-1/2 bg-stone-900/90 text-white rounded-lg shadow-xl flex gap-1 p-1 text-xs border border-stone-600 animate-fade-in pointer-events-auto">
-                                                                <button onClick={() => updateItemTransform(item.id, 'scale', 1)} class="p-1.5 hover:bg-stone-700 rounded"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
-                                                                <button onClick={() => updateItemTransform(item.id, 'scale', -1)} class="p-1.5 hover:bg-stone-700 rounded"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
-                                                                <div class="w-[1px] bg-stone-600 mx-1"></div>
-                                                                <button onClick={() => updateItemTransform(item.id, 'rotate', -1)} class="p-1.5 hover:bg-stone-700 rounded"><i class="fa-solid fa-rotate-left"></i></button>
-                                                                <button onClick={() => updateItemTransform(item.id, 'rotate', 1)} class="p-1.5 hover:bg-stone-700 rounded"><i class="fa-solid fa-rotate-right"></i></button>
-                                                                <div class="w-[1px] bg-stone-600 mx-1"></div>
-                                                                <button onClick={() => deleteItem(item.id)} class="p-1.5 text-rose-400 hover:bg-rose-900/50 rounded"><i class="fa-solid fa-trash-can"></i></button>
-                                                            </div>
-                                                        )}
-
-                                                        {/* Render Nội Dung */}
-                                                        {item.type === 'text' && (
-                                                            <div class={`whitespace-nowrap text-xl font-semibold select-none ${getTextColorClass(item.color)} ${item.font}`}>
-                                                                {item.content}
-                                                            </div>
-                                                        )}
-                                                        {item.type === 'sticker' && (
-                                                            <img src={item.content} class="w-16 h-16 object-contain select-none pointer-events-none drop-shadow-sm" draggable="false" />
-                                                        )}
-                                                        {item.type === 'image' && (
-                                                            <div class="p-2 bg-white shadow-md border border-stone-200 rotate-1 select-none pointer-events-none max-w-[200px]">
-                                                                <img src={item.content} class="w-full h-auto" draggable="false" />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                            
-                                            {/* Hướng dẫn khi trang trống */}
-                                            {currentPage.items?.length === 0 && (
-                                                <div class="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none">
-                                                    <i class="fa-solid fa-pen-nib text-5xl mb-4 text-stone-500"></i>
-                                                    <p class="font-handwriting text-2xl text-stone-600">Trang giấy trắng tinh...</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </section>
-                    </main>
-
-                    {/* TOAST THÔNG BÁO */}
-                    {toast && (
-                        <div class="fixed bottom-5 right-5 bg-stone-900 text-amber-200 px-5 py-3 rounded-xl shadow-2xl border border-amber-500/50 z-50 flex items-center gap-3 animate-bounce">
-                            <i class="fa-solid fa-bell text-amber-500"></i>
-                            <span class="text-sm font-bold">{toast}</span>
-                        </div>
-                    )}
-
-                    {/* MODAL 1: TẠO TRANG */}
-                    {showCreateModal && (
-                        <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-                            <form onSubmit={handleCreatePage} class="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
-                                <h3 class="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">📖 Tạo Trang Sách Của Bạn</h3>
-                                <div class="space-y-4">
-                                    <div>
-                                        <label class="block text-xs text-stone-400 mb-1">Tên hiển thị của bạn:</label>
-                                        <input name="author" required type="text" class="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-2 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500" placeholder="VD: Huy Nè" />
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs text-stone-400 mb-1">Mật khẩu khóa trang này:</label>
-                                        <input name="password" required type="text" class="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-2 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 font-mono" placeholder="VD: 12345" />
-                                        <p class="text-[10px] text-rose-400 mt-1">*Hãy nhớ pass này để tự sửa trang sau này!</p>
-                                    </div>
-                                    <div class="flex gap-2 pt-2">
-                                        <button type="button" onClick={() => setShowCreateModal(false)} class="flex-1 bg-stone-800 text-white py-2 rounded-xl text-sm font-bold">Hủy</button>
-                                        <button type="submit" class="flex-1 bg-amber-600 text-stone-950 py-2 rounded-xl text-sm font-bold">Thêm Trang Sổ</button>
-                                    </div>
-                                </div>
-                            </form>
-                        </div>
-                    )}
-
-                    {/* MODAL 2: MỞ KHÓA TRANG */}
-                    {showUnlockModal && (
-                        <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-                            <form onSubmit={handleUnlock} class="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
-                                <h3 class="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">🔑 Mở Khóa Chỉnh Sửa</h3>
-                                <p class="text-xs text-stone-400 mb-4">Nhập mật mã để chỉnh sửa trang của <span class="font-bold text-amber-400">{currentPage?.author}</span>:</p>
-                                <input value={unlockInput} onChange={e => setUnlockInput(e.target.value)} type="password" class="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 font-mono text-center tracking-widest text-lg mb-4" placeholder="••••" />
-                                <div class="flex gap-2">
-                                    <button type="button" onClick={() => setShowUnlockModal(false)} class="flex-1 bg-stone-800 text-white py-2 rounded-xl text-sm font-bold">Đóng</button>
-                                    <button type="submit" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl text-sm font-bold">Mở Khóa Nào!</button>
-                                </div>
-                            </form>
-                        </div>
-                    )}
-
-                </div>
-            );
-        }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+                                <div class="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-stone-950 via-stone
