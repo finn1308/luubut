@@ -5,8 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>✨ Sổ Lưu Bút Tuổi Học Trò ✨</title>
     
+    <!-- CSS Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- CSS Cropper (Cắt ảnh) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Playfair+Display:ital,wght@0,400;0,700;1,400;1,700&family=Quicksand:wght@400;500;600;700&family=Patrick+Hand&family=Caveat:wght@600;700&display=swap');
@@ -39,14 +43,20 @@
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #3b271d; }
         ::-webkit-scrollbar-thumb { background: #8b5a2b; border-radius: 4px; }
+        
+        /* Chỉnh Scrollbar riêng cho mục Sticker */
+        .sticker-scroll::-webkit-scrollbar { width: 4px; }
+        .sticker-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 4px; }
+        .sticker-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
     </style>
 
+    <!-- React, Babel, Firebase, Cropper -->
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
 </head>
 <body class="bg-[#2d1b13] text-stone-800 min-h-screen relative overflow-x-hidden selection:bg-amber-200">
 
@@ -74,11 +84,20 @@
             console.error("Lỗi kết nối Firebase:", error);
         }
 
+        // Bổ sung thêm rất nhiều Sticker mới
         const STICKER_TEMPLATES = {
             phuongvi: { name: "Hoa Phượng", content: "https://cdn-icons-png.flaticon.com/512/3209/3209012.png" },
             plane: { name: "Máy Bay Giấy", content: "https://cdn-icons-png.flaticon.com/512/2165/2165734.png" },
             heart: { name: "Trái Tim", content: "https://cdn-icons-png.flaticon.com/512/833/833472.png" },
-            daisy: { name: "Cúc Họa Mi", content: "https://cdn-icons-png.flaticon.com/512/1087/1087340.png" }
+            daisy: { name: "Cúc Họa Mi", content: "https://cdn-icons-png.flaticon.com/512/1087/1087340.png" },
+            star: { name: "Ngôi Sao", content: "https://cdn-icons-png.flaticon.com/512/1828/1828884.png" },
+            sun: { name: "Mặt Trời", content: "https://cdn-icons-png.flaticon.com/512/869/869869.png" },
+            cat: { name: "Mèo Cute", content: "https://cdn-icons-png.flaticon.com/512/2950/2950993.png" },
+            dog: { name: "Cún", content: "https://cdn-icons-png.flaticon.com/512/616/616408.png" },
+            balloon: { name: "Bóng Bay", content: "https://cdn-icons-png.flaticon.com/512/4370/4370605.png" },
+            rainbow: { name: "Cầu Vồng", content: "https://cdn-icons-png.flaticon.com/512/3063/3063162.png" },
+            gift: { name: "Hộp Quà", content: "https://cdn-icons-png.flaticon.com/512/4213/4213958.png" },
+            camera: { name: "Máy Ảnh", content: "https://cdn-icons-png.flaticon.com/512/3178/3178158.png" }
         };
 
         const formatDate = (timestamp) => {
@@ -105,12 +124,14 @@
             const [showUnlockModal, setShowUnlockModal] = useState(false);
             const [unlockInput, setUnlockInput] = useState('');
             const [toast, setToast] = useState('');
-            const [criticalError, setCriticalError] = useState('');
+            
+            // Trạng thái cho Cắt ảnh (Crop Modal)
+            const [cropImageSrc, setCropImageSrc] = useState(null);
+            const cropperRef = useRef(null);
+            const cropImageElementRef = useRef(null);
 
             const notebookRef = useRef(null);
             const fileInputRef = useRef(null);
-            
-            // Theo dõi tổng số trang chính xác nhất để khắc phục lỗi không nhảy trang
             const pagesLengthRef = useRef(0);
 
             const showToast = (msg) => {
@@ -118,6 +139,7 @@
                 setTimeout(() => setToast(''), 4000);
             };
 
+            // Init Firebase listener
             useEffect(() => {
                 if (!db) return;
                 const pagesRef = db.collection('pages');
@@ -134,7 +156,7 @@
                         });
                     } else {
                         setPages(loadedPages);
-                        pagesLengthRef.current = loadedPages.length; // Cập nhật tổng số trang mới nhất
+                        pagesLengthRef.current = loadedPages.length; 
                         
                         if (currentPageIdx >= loadedPages.length) {
                             setCurrentPageIdx(Math.max(0, loadedPages.length - 1));
@@ -146,6 +168,30 @@
 
                 return () => unsubscribe();
             }, [currentPageIdx]);
+
+            // Init Cropper.js khi Modal hiện lên
+            useEffect(() => {
+                if (cropImageSrc && cropImageElementRef.current) {
+                    cropperRef.current = new Cropper(cropImageElementRef.current, {
+                        viewMode: 1,
+                        dragMode: 'move',
+                        autoCropArea: 0.9,
+                        restore: false,
+                        guides: true,
+                        center: true,
+                        highlight: false,
+                        cropBoxMovable: true,
+                        cropBoxResizable: true,
+                        toggleDragModeOnDblclick: false,
+                    });
+                }
+                return () => {
+                    if (cropperRef.current) {
+                        cropperRef.current.destroy();
+                        cropperRef.current = null;
+                    }
+                };
+            }, [cropImageSrc]);
 
             const currentPage = pages[currentPageIdx];
             const isUnlocked = currentPage ? editUnlocked[currentPage.id] : false;
@@ -180,7 +226,6 @@
                     setShowCreateModal(false);
                     showToast(`Đã lưu trang riêng cho ${author} vĩnh viễn!`);
                     
-                    // FIX LỖI KHÔNG TẠO ĐƯỢC TRANG 2, 3: Đợi Data kịp về rồi nhảy tới trang cuối cùng
                     setTimeout(() => {
                         setCurrentPageIdx(Math.max(0, pagesLengthRef.current - 1));
                         setPageFlipKey(prev => prev + 1);
@@ -239,28 +284,36 @@
                 const file = e.target.files[0];
                 if (!file) return;
                 if (!isUnlocked) {
-                    showToast("Vui lòng mở khóa trang trước!"); return;
+                    showToast("Vui lòng mở khóa trang trước!"); 
+                    return;
                 }
 
                 const reader = new FileReader();
                 reader.onload = (event) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        const MAX_WIDTH = 300;
-                        const scaleSize = MAX_WIDTH / img.width;
-                        canvas.width = MAX_WIDTH;
-                        canvas.height = img.height * scaleSize;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                        const base64Image = canvas.toDataURL('image/jpeg', 0.7);
-                        
-                        addItemToPage({ id: 'img_' + Date.now(), type: 'image', content: base64Image, x: 50, y: 50, scale: 1, rotate: 0 });
-                        showToast("Đã dán ảnh thành công!");
-                    };
-                    img.src = event.target.result;
+                    // Mở Modal Cắt ảnh
+                    setCropImageSrc(event.target.result);
+                    // Reset input để chọn lại file cũ nếu cần
+                    if (fileInputRef.current) fileInputRef.current.value = '';
                 };
                 reader.readAsDataURL(file);
+            };
+
+            const confirmCropImage = () => {
+                if (cropperRef.current) {
+                    // Xuất ảnh Canvas đã cắt (Giới hạn kích thước tránh nặng database)
+                    const canvas = cropperRef.current.getCroppedCanvas({
+                        maxWidth: 400,
+                        maxHeight: 400,
+                    });
+                    const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+                    
+                    addItemToPage({ 
+                        id: 'img_' + Date.now(), type: 'image', content: base64Image, 
+                        x: 50, y: 50, scale: 1, rotate: 0 
+                    });
+                    showToast("Đã dán ảnh thành công!");
+                    setCropImageSrc(null); // Đóng modal
+                }
             };
             
             const deleteItem = async (itemId) => {
@@ -323,13 +376,11 @@
 
             const handlePointerUp = async () => {
                 if (!draggingItem || !isUnlocked) {
-                    setDraggingItem(null); // Giải phóng ngay lập tức nếu trượt tay ra ngoài
+                    setDraggingItem(null); 
                     return;
                 }
                 
                 const finalItem = currentPage.items.find(i => i.id === draggingItem.id);
-                
-                // FIX LỖI DÍNH STICKER: Yêu cầu máy nhả chuột ra ngay lập tức, không thèm chờ mạng
                 setDraggingItem(null);
                 
                 if (finalItem) {
@@ -407,6 +458,7 @@
                             <h2 className="text-xl font-bold text-amber-200 border-b border-stone-700 pb-3 mb-4">🎨 Khay Đồ Dùng</h2>
                             
                             <div className={`space-y-5 ${!isUnlocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                                {/* Tool 1 */}
                                 <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
                                     <label className="text-xs text-stone-400 font-bold mb-2 block">1. Viết lời chúc (Mực máy)</label>
                                     <form onSubmit={handleAddText} className="flex flex-col gap-2">
@@ -426,9 +478,10 @@
                                     </form>
                                 </div>
 
+                                {/* Tool 2: Sticker thu gọn, thêm thanh cuộn */}
                                 <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
                                     <label className="text-xs text-stone-400 font-bold mb-2 block">2. Dán Sticker</label>
-                                    <div className="grid grid-cols-4 gap-2">
+                                    <div className="grid grid-cols-4 gap-2 max-h-36 overflow-y-auto sticker-scroll pr-1">
                                         {Object.keys(STICKER_TEMPLATES).map(key => (
                                             <button key={key} onClick={() => handleAddSticker(key)} className="bg-stone-900 hover:bg-amber-900/50 border border-stone-700 p-2 rounded-xl flex flex-col items-center justify-center gap-1 transition">
                                                 <img src={STICKER_TEMPLATES[key].content} className="w-8 h-8 object-contain drop-shadow-md opacity-90" />
@@ -437,11 +490,12 @@
                                     </div>
                                 </div>
 
+                                {/* Tool 3 */}
                                 <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
                                     <label className="text-xs text-stone-400 font-bold mb-2 block">3. Kẹp Ảnh Kỷ Niệm</label>
                                     <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
                                     <button onClick={() => fileInputRef.current.click()} className="w-full bg-stone-900 hover:bg-stone-700 text-amber-200 border border-stone-600 border-dashed text-xs py-4 rounded-xl flex items-center justify-center gap-2 transition">
-                                        <i className="fa-solid fa-camera"></i> Tải ảnh từ máy lên
+                                        <i className="fa-solid fa-camera"></i> Chọn ảnh & Chỉnh sửa
                                     </button>
                                 </div>
                             </div>
@@ -478,33 +532,61 @@
                                                         <div 
                                                             key={item.id}
                                                             onPointerDown={(e) => handlePointerDown(e, item)}
-                                                            className={`absolute cursor-${isUnlocked ? 'grab' : 'default'} ${draggingItem?.id === item.id ? 'cursor-grabbing opacity-80 scale-105' : ''} transition-transform duration-100 touch-none`}
+                                                            className={`absolute cursor-${isUnlocked ? 'grab' : 'default'} ${draggingItem?.id === item.id ? 'cursor-grabbing opacity-80' : ''} touch-none select-none`}
                                                             style={{
                                                                 left: `${item.x}%`, top: `${item.y}%`,
-                                                                transform: `translate(-50%, -50%) scale(${item.scale}) rotate(${item.rotate}deg)`,
+                                                                transform: `translate(-50%, -50%)`,
                                                                 zIndex: isSelected ? 30 : 10
                                                             }}
                                                         >
-                                                            {isSelected && isUnlocked && (
-                                                                <div 
-                                                                    // FIX LỖI KHÔNG XÓA ĐƯỢC: Ngăn không cho trình duyệt hiểu click vào nút là click vào sticker
-                                                                    onPointerDown={(e) => e.stopPropagation()} 
-                                                                    onClick={(e) => e.stopPropagation()}
-                                                                    className="absolute -top-12 left-1/2 -translate-x-1/2 bg-stone-900/90 text-white rounded-lg shadow-xl flex gap-1 p-1 text-xs border border-stone-600 animate-fade-in pointer-events-auto"
-                                                                >
-                                                                    <button onClick={() => updateItemTransform(item.id, 'scale', 1)} className="p-1.5 hover:bg-stone-700 rounded"><i className="fa-solid fa-magnifying-glass-plus"></i></button>
-                                                                    <button onClick={() => updateItemTransform(item.id, 'scale', -1)} className="p-1.5 hover:bg-stone-700 rounded"><i className="fa-solid fa-magnifying-glass-minus"></i></button>
-                                                                    <div className="w-[1px] bg-stone-600 mx-1"></div>
-                                                                    <button onClick={() => updateItemTransform(item.id, 'rotate', -1)} className="p-1.5 hover:bg-stone-700 rounded"><i className="fa-solid fa-rotate-left"></i></button>
-                                                                    <button onClick={() => updateItemTransform(item.id, 'rotate', 1)} className="p-1.5 hover:bg-stone-700 rounded"><i className="fa-solid fa-rotate-right"></i></button>
-                                                                    <div className="w-[1px] bg-stone-600 mx-1"></div>
-                                                                    <button onClick={() => deleteItem(item.id)} className="p-1.5 text-rose-400 hover:bg-rose-900/50 rounded"><i className="fa-solid fa-trash-can"></i></button>
-                                                                </div>
-                                                            )}
+                                                            {/* HỘP BAO QUANH PHẦN TỬ ĐỂ CHỨA NÚT Ở 4 GÓC */}
+                                                            <div 
+                                                                className={`relative transition-transform duration-100 ${isSelected && isUnlocked ? 'ring-2 ring-dashed ring-amber-500 bg-white/30 p-1' : ''}`}
+                                                                style={{ transform: `scale(${item.scale}) rotate(${item.rotate}deg)` }}
+                                                            >
+                                                                {isSelected && isUnlocked && (
+                                                                    <>
+                                                                        {/* THÙNG RÁC XÓA - GÓC DƯỚI PHẢI */}
+                                                                        <button 
+                                                                            onPointerDown={(e) => { e.stopPropagation(); deleteItem(item.id); }} 
+                                                                            className="absolute -bottom-4 -right-4 w-8 h-8 bg-rose-500 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-rose-600 hover:scale-110 pointer-events-auto transition z-40"
+                                                                        >
+                                                                            <i className="fa-solid fa-trash-can text-sm"></i>
+                                                                        </button>
+                                                                        
+                                                                        {/* PHÓNG TO - GÓC TRÊN PHẢI */}
+                                                                        <button 
+                                                                            onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'scale', 1); }} 
+                                                                            className="absolute -top-3 -right-3 w-6 h-6 bg-emerald-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-emerald-600 hover:scale-110 pointer-events-auto transition z-40"
+                                                                        >
+                                                                            <i className="fa-solid fa-plus text-[10px]"></i>
+                                                                        </button>
+                                                                        
+                                                                        {/* THU NHỎ - GÓC TRÊN TRÁI */}
+                                                                        <button 
+                                                                            onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'scale', -1); }} 
+                                                                            className="absolute -top-3 -left-3 w-6 h-6 bg-stone-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-stone-600 hover:scale-110 pointer-events-auto transition z-40"
+                                                                        >
+                                                                            <i className="fa-solid fa-minus text-[10px]"></i>
+                                                                        </button>
+                                                                        
+                                                                        {/* XOAY VÒNG - GÓC DƯỚI TRÁI */}
+                                                                        <button 
+                                                                            onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'rotate', 1); }} 
+                                                                            className="absolute -bottom-3 -left-3 w-6 h-6 bg-sky-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-sky-600 hover:scale-110 pointer-events-auto transition z-40"
+                                                                        >
+                                                                            <i className="fa-solid fa-rotate-right text-[10px]"></i>
+                                                                        </button>
+                                                                    </>
+                                                                )}
 
-                                                            {item.type === 'text' && <div className={`whitespace-nowrap text-xl font-semibold select-none ${getTextColorClass(item.color)} ${item.font}`}>{item.content}</div>}
-                                                            {item.type === 'sticker' && <img src={item.content} className="w-16 h-16 object-contain select-none pointer-events-none drop-shadow-sm" draggable="false" />}
-                                                            {item.type === 'image' && <div className="p-2 bg-white shadow-md border border-stone-200 rotate-1 select-none pointer-events-none max-w-[200px]"><img src={item.content} className="w-full h-auto" draggable="false" /></div>}
+                                                                {/* NỘI DUNG CHÍNH (Đã tắt event pointer bên trong để không bị kẹt) */}
+                                                                <div className="pointer-events-none">
+                                                                    {item.type === 'text' && <div className={`whitespace-nowrap text-xl font-semibold ${getTextColorClass(item.color)} ${item.font}`}>{item.content}</div>}
+                                                                    {item.type === 'sticker' && <img src={item.content} className="w-16 h-16 object-contain drop-shadow-sm" draggable="false" />}
+                                                                    {item.type === 'image' && <div className="p-2 bg-white shadow-md border border-stone-200 rotate-1 max-w-[200px]"><img src={item.content} className="w-full h-auto" draggable="false" /></div>}
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     );
                                                 })}
@@ -530,18 +612,19 @@
                         </div>
                     )}
 
+                    {/* MODAL 1: TẠO TRANG */}
                     {showCreateModal && (
                         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-                            <form onSubmit={handleCreatePage} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
+                            <form autoComplete="off" onSubmit={handleCreatePage} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
                                 <h3 className="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">📖 Tạo Trang Sách Của Bạn</h3>
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-xs text-stone-400 mb-1">Tên hiển thị của bạn:</label>
-                                        <input name="author" required type="text" className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-2 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500" placeholder="VD: Huy Nè" />
+                                        <input name="author_new" required type="text" className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-2 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500" placeholder="VD: Huy Nè" />
                                     </div>
                                     <div>
                                         <label className="block text-xs text-stone-400 mb-1">Mật khẩu khóa trang này:</label>
-                                        <input name="password" required type="text" className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-2 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 font-mono" placeholder="VD: 12345" />
+                                        <input name="password_new" autoComplete="new-password" required type="password" className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-2 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 font-mono" placeholder="VD: 12345" />
                                     </div>
                                     <div className="flex gap-2 pt-2">
                                         <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 bg-stone-800 text-white py-2 rounded-xl text-sm font-bold">Hủy</button>
@@ -552,17 +635,48 @@
                         </div>
                     )}
 
+                    {/* MODAL 2: MỞ KHÓA TRANG */}
                     {showUnlockModal && (
                         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-                            <form onSubmit={handleUnlock} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
+                            <form autoComplete="off" onSubmit={handleUnlock} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
                                 <h3 className="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">🔑 Mở Khóa Chỉnh Sửa</h3>
                                 <p className="text-xs text-stone-400 mb-4">Nhập mật mã để chỉnh sửa trang của <span className="font-bold text-amber-400">{currentPage?.author}</span>:</p>
-                                <input value={unlockInput} onChange={e => setUnlockInput(e.target.value)} type="password" className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 font-mono text-center tracking-widest text-lg mb-4" placeholder="••••" />
+                                {/* Thêm autoComplete="new-password" để vô hiệu hóa lưu mật khẩu */}
+                                <input 
+                                    name="unlock_password_field" 
+                                    autoComplete="new-password" 
+                                    value={unlockInput} 
+                                    onChange={e => setUnlockInput(e.target.value)} 
+                                    type="password" 
+                                    className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 font-mono text-center tracking-widest text-lg mb-4" 
+                                    placeholder="••••" 
+                                />
                                 <div className="flex gap-2">
                                     <button type="button" onClick={() => setShowUnlockModal(false)} className="flex-1 bg-stone-800 text-white py-2 rounded-xl text-sm font-bold">Đóng</button>
                                     <button type="submit" className="flex-1 bg-emerald-600 text-white py-2 rounded-xl text-sm font-bold">Mở Khóa Nào!</button>
                                 </div>
                             </form>
+                        </div>
+                    )}
+
+                    {/* MODAL 3: TRÌNH CẮT ẢNH (CROPPER) */}
+                    {cropImageSrc && (
+                        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex flex-col items-center justify-center p-4">
+                            <div className="w-full max-w-3xl bg-stone-900 rounded-2xl overflow-hidden shadow-2xl border border-stone-700 flex flex-col h-[80vh] md:h-[70vh]">
+                                <div className="p-4 bg-stone-800 flex justify-between items-center text-amber-100 border-b border-stone-700">
+                                    <h3 className="font-bold text-lg"><i className="fa-solid fa-crop-simple mr-2"></i> Cắt và Chỉnh sửa ảnh</h3>
+                                    <button onClick={() => setCropImageSrc(null)} className="hover:text-rose-400 transition"><i className="fa-solid fa-times fa-lg"></i></button>
+                                </div>
+                                <div className="flex-1 w-full relative bg-stone-950 p-4">
+                                    <img ref={cropImageElementRef} src={cropImageSrc} className="max-w-full block" />
+                                </div>
+                                <div className="p-4 bg-stone-800 flex justify-end gap-3 border-t border-stone-700">
+                                    <button onClick={() => setCropImageSrc(null)} className="px-5 py-2.5 bg-stone-700 hover:bg-stone-600 text-white rounded-xl font-bold transition">Hủy bỏ</button>
+                                    <button onClick={confirmCropImage} className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-900 font-bold rounded-xl shadow-lg transition flex items-center gap-2">
+                                        <i className="fa-solid fa-check"></i> Xong & Dán vào vở
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     )}
 
