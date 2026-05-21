@@ -123,6 +123,9 @@
             console.error("Lỗi kết nối Firebase:", error);
         }
 
+        // Tạo Collection mới (v3) để cập nhật format mật khẩu mới
+        const COLLECTION_NAME = 'luubut_class_v3'; 
+
         const STICKER_TEMPLATES = {
             phuongvi: { name: "Hoa Phượng", content: "https://cdn-icons-png.flaticon.com/512/3209/3209012.png" },
             plane: { name: "Máy Bay Giấy", content: "https://cdn-icons-png.flaticon.com/512/2165/2165734.png" },
@@ -151,6 +154,17 @@
             if (typeof timestamp === 'number') return new Date(timestamp).toLocaleDateString('vi-VN');
             if (timestamp.toDate) return new Date(timestamp.toDate()).toLocaleDateString('vi-VN');
             return 'Mới đây';
+        };
+
+        // Hàm tạo định dạng mật khẩu: không dấu, không cách, hoa chữ cái đầu (VD: Đỗ Huyền Diệu -> Dohuyendieu)
+        const generatePassword = (fullName) => {
+            let str = fullName.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // Bỏ dấu tiếng Việt
+            str = str.replace(/đ/g, "d").replace(/Đ/g, "D"); // Xử lý riêng chữ đ/Đ
+            str = str.replace(/\s+/g, "").toLowerCase(); // Bỏ khoảng trắng và đưa về in thường
+            if (str.length > 0) {
+                str = str.charAt(0).toUpperCase() + str.slice(1); // Viết hoa chữ cái đầu
+            }
+            return str;
         };
 
         function App() {
@@ -190,18 +204,59 @@
             // Init Firebase listener
             useEffect(() => {
                 if (!db) return;
-                const pagesRef = db.collection('pages');
+                const pagesRef = db.collection(COLLECTION_NAME);
                 
                 const unsubscribe = pagesRef.orderBy('createdAt', 'asc').onSnapshot(snapshot => {
                     const loadedPages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     
                     if (loadedPages.length === 0) {
-                        pagesRef.add({
-                            author: "Tập Thể Lớp Chúng Mình",
-                            password: "",
-                            items: [],
-                            createdAt: Date.now() 
-                        });
+                        const initData = async () => {
+                            const batch = db.batch();
+                            
+                            // 1. Tạo trang mở đầu của Tập Thể Lớp
+                            const defaultRef = pagesRef.doc();
+                            batch.set(defaultRef, {
+                                author: "Tập Thể Lớp Chúng Mình",
+                                password: "",
+                                items: [],
+                                createdAt: Date.now() 
+                            });
+
+                            // 2. Tạo 44 trang profile dựa theo danh sách lớp
+                            const studentList = [
+                                "Khuất Phương Anh", "Nguyễn Phương Anh", "Nguyễn Thị Ngọc Anh", "Trần Phương Anh",
+                                "Trần Xuân Bắc", "Trần Thị Tâm Chuyên", "Đỗ Huyền Diệu", "Cấn Vũ Hạnh Dung",
+                                "Hoàng Ngọc Khánh Dương", "Nguyễn Thái Dương", "Trần Thị Ánh Dương", "Hoàng Thị Mai Đào",
+                                "Đinh Hương Giang", "Đỗ Bảo Hà", "Nguyễn Thị Hồng Hạnh", "Đỗ Doãn Huy Hiệp",
+                                "Vũ Trung Hiếu", "Kiều Tuấn Hùng", "Nguyễn Văn Huy", "Trần Huy Khoa",
+                                "Trương Ngọc Linh", "Nguyễn Hoàng Khánh Loan", "Nguyễn Thành Long", "Vũ Phúc Lộc",
+                                "Đỗ Hữu Minh", "Hoàng Đình Anh Minh", "Hoàng Đình Gia Minh", "Nguyễn Bá Duy Minh",
+                                "Đỗ Hà My", "Lê Đức Ngọc", "Tăng Yến Nhi", "Hoàng Bảo Như",
+                                "Nguyễn Kỳ Quốc", "Đỗ Thị Phương Thảo", "Hoàng Thị Phương Thảo", "Nguyễn Lưu Hạ Thảo",
+                                "Dương Thị Nguyệt Thu", "Đỗ Thị Thu", "Trần Thị Thanh Thuý", "Đỗ Huyền Trang",
+                                "Nguyễn Thị Thùy Trang", "Hà Hoàng Phương Trinh", "Nguyễn Thị Thu Uyên", "Trần Thị Bảo Yến"
+                            ];
+
+                            studentList.forEach((fullName, index) => {
+                                // Lấy đúng 2 chữ cuối trong tên làm Author
+                                const words = fullName.trim().split(' ');
+                                const shortName = words.length >= 2 ? words.slice(-2).join(' ') : fullName;
+                                
+                                const generatedPass = generatePassword(fullName);
+
+                                const docRef = pagesRef.doc();
+                                batch.set(docRef, {
+                                    author: shortName,
+                                    password: generatedPass,
+                                    items: [],
+                                    createdAt: Date.now() + index + 1 // Tạo độ trễ milliseconds để hiển thị đúng thứ tự Alphabet
+                                });
+                            });
+
+                            // Gửi lệnh khởi tạo hàng loạt lên Database
+                            await batch.commit();
+                        };
+                        initData();
                     } else {
                         setPages(loadedPages);
                         pagesLengthRef.current = loadedPages.length; 
@@ -253,7 +308,7 @@
                 if (!author || !pwd) return;
 
                 try {
-                    const newDoc = await db.collection('pages').add({
+                    const newDoc = await db.collection(COLLECTION_NAME).add({
                         author: author,
                         password: pwd,
                         items: [],
@@ -279,13 +334,14 @@
                 e.preventDefault();
                 if (!currentPage) return;
                 
-                if (unlockInput === currentPage.password || currentPage.password === "") {
+                // Mật khẩu người dùng nhập vào phải khớp với chuỗi "Dohuyendieu" (chính xác từng ký tự)
+                if (unlockInput.trim() === currentPage.password || currentPage.password === "") {
                     setEditUnlocked(prev => ({ ...prev, [currentPage.id]: true }));
                     setShowUnlockModal(false);
                     setUnlockInput('');
-                    showToast("Mở khóa thành công! Bạn có thể viết vẽ rồi.");
+                    showToast(`Đã mở khóa trang của ${currentPage.author}!`);
                 } else {
-                    showToast("❌ Sai mật khẩu. Vui lòng hỏi chủ trang!");
+                    showToast("❌ Sai mật khẩu. Mật mã là họ tên không dấu, không cách, hoa chữ cái đầu!");
                 }
             };
 
@@ -296,7 +352,7 @@
                 }
                 const updatedItems = [...(currentPage.items || []), newItem];
                 try {
-                    await db.collection('pages').doc(currentPage.id).update({ items: updatedItems });
+                    await db.collection(COLLECTION_NAME).doc(currentPage.id).update({ items: updatedItems });
                 } catch (error) {
                     showToast("Lỗi khi dán lên trang.");
                 }
@@ -372,7 +428,7 @@
             const deleteItem = async (itemId) => {
                 if (!isUnlocked) return;
                 const updatedItems = currentPage.items.filter(i => i.id !== itemId);
-                await db.collection('pages').doc(currentPage.id).update({ items: updatedItems });
+                await db.collection(COLLECTION_NAME).doc(currentPage.id).update({ items: updatedItems });
                 setSelectedItemId(null);
             };
 
@@ -385,7 +441,7 @@
                 if (type === 'scale') items[index].scale = Math.max(0.5, items[index].scale + (direction * 0.1));
                 else if (type === 'rotate') items[index].rotate = (items[index].rotate + (direction * 15)) % 360;
                 
-                await db.collection('pages').doc(currentPage.id).update({ items });
+                await db.collection(COLLECTION_NAME).doc(currentPage.id).update({ items });
             };
 
             const handlePointerDown = (e, item) => {
@@ -438,7 +494,7 @@
                 
                 if (finalItem) {
                     try {
-                        await db.collection('pages').doc(currentPage.id).update({
+                        await db.collection(COLLECTION_NAME).doc(currentPage.id).update({
                             items: currentPage.items
                         });
                     } catch(err) {
@@ -732,7 +788,7 @@
                                     </div>
                                     <div>
                                         <label className="block text-xs text-stone-400 mb-1">Mật khẩu khóa trang này:</label>
-                                        <input name="password_new" autoComplete="new-password" required type="password" className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-2 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 font-mono" placeholder="VD: 12345" />
+                                        <input name="password_new" autoComplete="new-password" required type="password" className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-2 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 font-mono" placeholder="VD: Huyne" />
                                     </div>
                                     <div className="flex gap-2 pt-2">
                                         <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 bg-stone-800 text-white py-2 rounded-xl text-sm font-bold">Hủy</button>
@@ -748,7 +804,7 @@
                         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
                             <form autoComplete="off" onSubmit={handleUnlock} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
                                 <h3 className="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">🔑 Mở Khóa Chỉnh Sửa</h3>
-                                <p className="text-xs text-stone-400 mb-4">Nhập mật mã để chỉnh sửa trang của <span className="font-bold text-amber-400">{currentPage?.author}</span>:</p>
+                                <p className="text-xs text-stone-400 mb-4">Nhập mật mã (họ tên không dấu, không cách, viết hoa chữ cái đầu) để chỉnh sửa trang của <span className="font-bold text-amber-400">{currentPage?.author}</span>:</p>
                                 <input 
                                     name="unlock_password_field" 
                                     autoComplete="new-password" 
@@ -756,7 +812,7 @@
                                     onChange={e => setUnlockInput(e.target.value)} 
                                     type="password" 
                                     className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 font-mono text-center tracking-widest text-lg mb-4" 
-                                    placeholder="••••" 
+                                    placeholder="Ví dụ: Dohuyendieu" 
                                 />
                                 <div className="flex gap-2">
                                     <button type="button" onClick={() => setShowUnlockModal(false)} className="flex-1 bg-stone-800 text-white py-2 rounded-xl text-sm font-bold">Đóng</button>
