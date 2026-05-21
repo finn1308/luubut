@@ -9,9 +9,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- CSS Cropper (Cắt ảnh) -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
-    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Playfair+Display:ital,wght@0,400;0,700;1,400;1,700&family=Quicksand:wght@400;500;600;700&family=Patrick+Hand&family=Caveat:wght@600;700&display=swap');
         
@@ -50,13 +47,12 @@
         .sticker-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
     </style>
 
-    <!-- React, Babel, Firebase, Cropper -->
+    <!-- React, Babel, Firebase -->
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
 </head>
 <body class="bg-[#2d1b13] text-stone-800 min-h-screen relative overflow-x-hidden selection:bg-amber-200">
 
@@ -124,11 +120,6 @@
             const [showUnlockModal, setShowUnlockModal] = useState(false);
             const [unlockInput, setUnlockInput] = useState('');
             const [toast, setToast] = useState('');
-            
-            // Trạng thái cho Cắt ảnh (Crop Modal)
-            const [cropImageSrc, setCropImageSrc] = useState(null);
-            const cropperRef = useRef(null);
-            const cropImageElementRef = useRef(null);
 
             const notebookRef = useRef(null);
             const fileInputRef = useRef(null);
@@ -169,30 +160,6 @@
                 return () => unsubscribe();
             }, [currentPageIdx]);
 
-            // Init Cropper.js khi Modal hiện lên
-            useEffect(() => {
-                if (cropImageSrc && cropImageElementRef.current) {
-                    cropperRef.current = new Cropper(cropImageElementRef.current, {
-                        viewMode: 1,
-                        dragMode: 'move',
-                        autoCropArea: 0.9,
-                        restore: false,
-                        guides: true,
-                        center: true,
-                        highlight: false,
-                        cropBoxMovable: true,
-                        cropBoxResizable: true,
-                        toggleDragModeOnDblclick: false,
-                    });
-                }
-                return () => {
-                    if (cropperRef.current) {
-                        cropperRef.current.destroy();
-                        cropperRef.current = null;
-                    }
-                };
-            }, [cropImageSrc]);
-
             const currentPage = pages[currentPageIdx];
             const isUnlocked = currentPage ? editUnlocked[currentPage.id] : false;
 
@@ -210,8 +177,8 @@
 
             const handleCreatePage = async (e) => {
                 e.preventDefault();
-                const author = e.target.author.value.trim();
-                const pwd = e.target.password.value.trim();
+                const author = e.target.author_new.value.trim();
+                const pwd = e.target.password_new.value.trim();
                 if (!author || !pwd) return;
 
                 try {
@@ -290,32 +257,49 @@
 
                 const reader = new FileReader();
                 reader.onload = (event) => {
-                    // Mở Modal Cắt ảnh
-                    setCropImageSrc(event.target.result);
-                    // Reset input để chọn lại file cũ nếu cần
-                    if (fileInputRef.current) fileInputRef.current.value = '';
+                    const img = new Image();
+                    img.onload = () => {
+                        // Tự động thu nhỏ ảnh để không làm nặng database
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 400;
+                        const MAX_HEIGHT = 400;
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > height) {
+                            if (width > MAX_WIDTH) {
+                                height *= MAX_WIDTH / width;
+                                width = MAX_WIDTH;
+                            }
+                        } else {
+                            if (height > MAX_HEIGHT) {
+                                width *= MAX_HEIGHT / height;
+                                height = MAX_HEIGHT;
+                            }
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // Lấy base64 và dán vào vở luôn
+                        const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+                        
+                        addItemToPage({ 
+                            id: 'img_' + Date.now(), type: 'image', content: base64Image, 
+                            x: 50, y: 50, scale: 1, rotate: 0 
+                        });
+                        showToast("Đã tải lên và dán ảnh thành công!");
+                        
+                        // Reset input file để chọn lại
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                    };
+                    img.src = event.target.result;
                 };
                 reader.readAsDataURL(file);
             };
 
-            const confirmCropImage = () => {
-                if (cropperRef.current) {
-                    // Xuất ảnh Canvas đã cắt (Giới hạn kích thước tránh nặng database)
-                    const canvas = cropperRef.current.getCroppedCanvas({
-                        maxWidth: 400,
-                        maxHeight: 400,
-                    });
-                    const base64Image = canvas.toDataURL('image/jpeg', 0.8);
-                    
-                    addItemToPage({ 
-                        id: 'img_' + Date.now(), type: 'image', content: base64Image, 
-                        x: 50, y: 50, scale: 1, rotate: 0 
-                    });
-                    showToast("Đã dán ảnh thành công!");
-                    setCropImageSrc(null); // Đóng modal
-                }
-            };
-            
             const deleteItem = async (itemId) => {
                 if (!isUnlocked) return;
                 const updatedItems = currentPage.items.filter(i => i.id !== itemId);
@@ -454,6 +438,7 @@
                           onPointerUp={handlePointerUp}
                           onPointerLeave={handlePointerUp}>
                         
+                        {}
                         <section className="md:col-span-4 bg-stone-900/60 p-5 rounded-[2rem] border border-stone-800 shadow-2xl backdrop-blur-md h-fit sticky top-24">
                             <h2 className="text-xl font-bold text-amber-200 border-b border-stone-700 pb-3 mb-4">🎨 Khay Đồ Dùng</h2>
                             
@@ -478,7 +463,7 @@
                                     </form>
                                 </div>
 
-                                {/* Tool 2: Sticker thu gọn, thêm thanh cuộn */}
+                                {/* Tool 2: Sticker */}
                                 <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
                                     <label className="text-xs text-stone-400 font-bold mb-2 block">2. Dán Sticker</label>
                                     <div className="grid grid-cols-4 gap-2 max-h-36 overflow-y-auto sticker-scroll pr-1">
@@ -495,17 +480,17 @@
                                     <label className="text-xs text-stone-400 font-bold mb-2 block">3. Kẹp Ảnh Kỷ Niệm</label>
                                     <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
                                     <button onClick={() => fileInputRef.current.click()} className="w-full bg-stone-900 hover:bg-stone-700 text-amber-200 border border-stone-600 border-dashed text-xs py-4 rounded-xl flex items-center justify-center gap-2 transition">
-                                        <i className="fa-solid fa-camera"></i> Chọn ảnh & Chỉnh sửa
+                                        <i className="fa-solid fa-camera"></i> Chọn & Dán Ảnh Lên Sổ
                                     </button>
                                 </div>
                             </div>
                         </section>
 
+                        {}
                         <section className="md:col-span-8 perspective-1000">
                             <div className="bg-[#4a3525] p-3 md:p-5 rounded-[2rem] shadow-2xl border-[6px] border-[#2d1b13] relative overflow-hidden h-full min-h-[700px] flex">
                                 <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-stone-950 via-stone-800 to-transparent z-20 border-r border-black/30"></div>
                                 <div className="w-full h-full relative pl-6">
-                                    {/* Bỏ onClick={() => setSelectedItemId(null)} ở đây để tránh bị mất viền 4 góc khi nhả chuột */}
                                     <div 
                                         key={pageFlipKey} 
                                         ref={notebookRef}
@@ -546,7 +531,7 @@
                                                             >
                                                                 {isSelected && isUnlocked && (
                                                                     <>
-                                                                        {/* NÚT HOÀN THÀNH (TÍCH XANH) - Ở TRÊN CÙNG ĐỂ CHỐT VỊ TRÍ */}
+                                                                        {/* NÚT HOÀN THÀNH */}
                                                                         <button 
                                                                             onPointerDown={(e) => { e.stopPropagation(); setSelectedItemId(null); }} 
                                                                             className="absolute -top-12 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-emerald-500 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-emerald-600 hover:scale-105 pointer-events-auto transition z-50 font-bold text-xs gap-2 whitespace-nowrap"
@@ -554,7 +539,7 @@
                                                                             <i className="fa-solid fa-check"></i> Đặt ở đây
                                                                         </button>
 
-                                                                        {/* THÙNG RÁC XÓA - GÓC DƯỚI PHẢI */}
+                                                                        {/* THÙNG RÁC XÓA */}
                                                                         <button 
                                                                             onPointerDown={(e) => { e.stopPropagation(); deleteItem(item.id); }} 
                                                                             className="absolute -bottom-4 -right-4 w-8 h-8 bg-rose-500 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-rose-600 hover:scale-110 pointer-events-auto transition z-40"
@@ -562,7 +547,7 @@
                                                                             <i className="fa-solid fa-trash-can text-sm"></i>
                                                                         </button>
                                                                         
-                                                                        {/* PHÓNG TO - GÓC TRÊN PHẢI */}
+                                                                        {/* PHÓNG TO */}
                                                                         <button 
                                                                             onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'scale', 1); }} 
                                                                             className="absolute -top-3 -right-3 w-7 h-7 bg-emerald-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-emerald-600 hover:scale-110 pointer-events-auto transition z-40"
@@ -570,7 +555,7 @@
                                                                             <i className="fa-solid fa-plus text-xs"></i>
                                                                         </button>
                                                                         
-                                                                        {/* THU NHỎ - GÓC TRÊN TRÁI */}
+                                                                        {/* THU NHỎ */}
                                                                         <button 
                                                                             onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'scale', -1); }} 
                                                                             className="absolute -top-3 -left-3 w-7 h-7 bg-stone-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-stone-600 hover:scale-110 pointer-events-auto transition z-40"
@@ -578,7 +563,7 @@
                                                                             <i className="fa-solid fa-minus text-xs"></i>
                                                                         </button>
                                                                         
-                                                                        {/* XOAY VÒNG - GÓC DƯỚI TRÁI */}
+                                                                        {/* XOAY VÒNG */}
                                                                         <button 
                                                                             onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'rotate', 1); }} 
                                                                             className="absolute -bottom-3 -left-3 w-7 h-7 bg-sky-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-sky-600 hover:scale-110 pointer-events-auto transition z-40"
@@ -588,7 +573,7 @@
                                                                     </>
                                                                 )}
 
-                                                                {/* NỘI DUNG CHÍNH (Đã tắt event pointer bên trong để không bị kẹt) */}
+                                                                {/* NỘI DUNG CHÍNH */}
                                                                 <div className="pointer-events-none">
                                                                     {item.type === 'text' && <div className={`whitespace-nowrap text-xl font-semibold ${getTextColorClass(item.color)} ${item.font}`}>{item.content}</div>}
                                                                     {item.type === 'sticker' && <img src={item.content} className="w-16 h-16 object-contain drop-shadow-sm" draggable="false" />}
@@ -613,6 +598,7 @@
                         </section>
                     </main>
 
+                    {}
                     {toast && (
                         <div className="fixed bottom-5 right-5 bg-stone-900 text-amber-200 px-5 py-3 rounded-xl shadow-2xl border border-amber-500/50 z-50 flex items-center gap-3 animate-bounce">
                             <i className="fa-solid fa-bell text-amber-500"></i>
@@ -649,7 +635,6 @@
                             <form autoComplete="off" onSubmit={handleUnlock} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
                                 <h3 className="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">🔑 Mở Khóa Chỉnh Sửa</h3>
                                 <p className="text-xs text-stone-400 mb-4">Nhập mật mã để chỉnh sửa trang của <span className="font-bold text-amber-400">{currentPage?.author}</span>:</p>
-                                {/* Thêm autoComplete="new-password" để vô hiệu hóa lưu mật khẩu */}
                                 <input 
                                     name="unlock_password_field" 
                                     autoComplete="new-password" 
@@ -666,28 +651,6 @@
                             </form>
                         </div>
                     )}
-
-                    {/* MODAL 3: TRÌNH CẮT ẢNH (CROPPER) */}
-                    {cropImageSrc && (
-                        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex flex-col items-center justify-center p-4">
-                            <div className="w-full max-w-3xl bg-stone-900 rounded-2xl overflow-hidden shadow-2xl border border-stone-700 flex flex-col h-[80vh] md:h-[70vh]">
-                                <div className="p-4 bg-stone-800 flex justify-between items-center text-amber-100 border-b border-stone-700">
-                                    <h3 className="font-bold text-lg"><i className="fa-solid fa-crop-simple mr-2"></i> Cắt và Chỉnh sửa ảnh</h3>
-                                    <button onClick={() => setCropImageSrc(null)} className="hover:text-rose-400 transition"><i className="fa-solid fa-times fa-lg"></i></button>
-                                </div>
-                                <div className="flex-1 w-full relative bg-stone-950 p-4">
-                                    <img ref={cropImageElementRef} src={cropImageSrc} className="max-w-full block" />
-                                </div>
-                                <div className="p-4 bg-stone-800 flex justify-end gap-3 border-t border-stone-700">
-                                    <button onClick={() => setCropImageSrc(null)} className="px-5 py-2.5 bg-stone-700 hover:bg-stone-600 text-white rounded-xl font-bold transition">Hủy bỏ</button>
-                                    <button onClick={confirmCropImage} className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-900 font-bold rounded-xl shadow-lg transition flex items-center gap-2">
-                                        <i className="fa-solid fa-check"></i> Xong & Dán vào vở
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                 </div>
             );
         }
