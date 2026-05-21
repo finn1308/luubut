@@ -67,7 +67,7 @@
             transform-style: preserve-3d;
         }
         .book-cover.is-open {
-            transform: rotateY(-155deg); /* Lật sang trái, nghiêng nhẹ tạo cảm giác sách đang mở */
+            transform: rotateY(-155deg);
         }
         .backface-hidden {
             backface-visibility: hidden;
@@ -123,8 +123,8 @@
             console.error("Lỗi kết nối Firebase:", error);
         }
 
-        // Tạo Collection mới (v3) để cập nhật format mật khẩu mới
-        const COLLECTION_NAME = 'luubut_class_v3'; 
+        // Tạo Collection mới (v5) để áp dụng tên hiển thị riêng biệt và bổ sung fullName
+        const COLLECTION_NAME = 'luubut_class_v5'; 
 
         const STICKER_TEMPLATES = {
             phuongvi: { name: "Hoa Phượng", content: "https://cdn-icons-png.flaticon.com/512/3209/3209012.png" },
@@ -189,6 +189,23 @@
 
             const [showCreateModal, setShowCreateModal] = useState(false);
             const [showUnlockModal, setShowUnlockModal] = useState(false);
+            
+            // State cho Đổi mật khẩu lần đầu
+            const [showChangePassModal, setShowChangePassModal] = useState(false);
+            const [newPasswordInput, setNewPasswordInput] = useState('');
+            const [tempUnlockId, setTempUnlockId] = useState(null);
+
+            // State cho Admin
+            const [showAdminModal, setShowAdminModal] = useState(false);
+            const [adminStep, setAdminStep] = useState(1);
+            const [adminPass1, setAdminPass1] = useState('');
+            const [adminPass2, setAdminPass2] = useState('');
+            const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+
+            // State cho Tìm Kiếm
+            const [showSearchModal, setShowSearchModal] = useState(false);
+            const [searchQuery, setSearchQuery] = useState('');
+
             const [unlockInput, setUnlockInput] = useState('');
             const [toast, setToast] = useState('');
 
@@ -217,9 +234,11 @@
                             const defaultRef = pagesRef.doc();
                             batch.set(defaultRef, {
                                 author: "Tập Thể Lớp Chúng Mình",
+                                fullName: "Tập Thể Lớp Chúng Mình",
                                 password: "",
                                 items: [],
-                                createdAt: Date.now() 
+                                createdAt: Date.now(),
+                                hasChangedPassword: true // Không yêu cầu đổi pass cho trang chung
                             });
 
                             // 2. Tạo 44 trang profile dựa theo danh sách lớp
@@ -240,16 +259,23 @@
                             studentList.forEach((fullName, index) => {
                                 // Lấy đúng 2 chữ cuối trong tên làm Author
                                 const words = fullName.trim().split(' ');
-                                const shortName = words.length >= 2 ? words.slice(-2).join(' ') : fullName;
+                                let shortName = words.length >= 2 ? words.slice(-2).join(' ') : fullName;
                                 
+                                // Đổi tên hiển thị thủ công cho các bạn Phương Anh để tránh trùng lặp
+                                if (fullName === "Khuất Phương Anh") shortName = "Khuất Anh";
+                                else if (fullName === "Nguyễn Phương Anh") shortName = "Nguyễn Anh";
+                                else if (fullName === "Trần Phương Anh") shortName = "Trần Anh";
+
                                 const generatedPass = generatePassword(fullName);
 
                                 const docRef = pagesRef.doc();
                                 batch.set(docRef, {
                                     author: shortName,
+                                    fullName: fullName,
                                     password: generatedPass,
                                     items: [],
-                                    createdAt: Date.now() + index + 1 // Tạo độ trễ milliseconds để hiển thị đúng thứ tự Alphabet
+                                    createdAt: Date.now() + index + 1, // Tạo độ trễ milliseconds để hiển thị đúng thứ tự Alphabet
+                                    hasChangedPassword: false // Đánh dấu cần đổi mật khẩu ở lần đăng nhập đầu tiên
                                 });
                             });
 
@@ -273,31 +299,42 @@
             }, [currentPageIdx]);
 
             const currentPage = pages[currentPageIdx];
-            const isUnlocked = currentPage ? editUnlocked[currentPage.id] : false;
+            const isUnlocked = isAdminUnlocked || (currentPage ? editUnlocked[currentPage.id] : false);
 
-            const turnPage = (direction) => {
-                if (isAnimating) return; // Chống spam click liên tục
+            const jumpToPage = (targetIdx) => {
+                if (isAnimating || targetIdx === currentPageIdx) {
+                    setShowSearchModal(false);
+                    return;
+                }
+                setIsAnimating(true);
+                const direction = targetIdx > currentPageIdx ? 'next' : 'prev';
                 
-                if (direction === 'next' && currentPageIdx < pages.length - 1) {
-                    setIsAnimating(true);
-                    setAnimState('flip-out-left'); // Trang hiện tại lật đi
+                if (direction === 'next') {
+                    setAnimState('flip-out-left');
                     setSelectedItemId(null);
-                    
                     setTimeout(() => {
-                        setCurrentPageIdx(prev => prev + 1);
-                        setAnimState('fade-in'); // Trang mới hiện ra
+                        setCurrentPageIdx(targetIdx);
+                        setAnimState('fade-in');
                         setPageFlipKey(prev => prev + 1);
                         setTimeout(() => setIsAnimating(false), 300);
-                    }, 500); // Đợi lật úp xong
-                    
-                } else if (direction === 'prev' && currentPageIdx > 0) {
-                    setIsAnimating(true);
-                    setCurrentPageIdx(prev => prev - 1);
-                    setAnimState('flip-in-right'); // Trang cũ lật về
+                    }, 500);
+                } else {
+                    setCurrentPageIdx(targetIdx);
+                    setAnimState('flip-in-right');
                     setSelectedItemId(null);
                     setPageFlipKey(prev => prev + 1);
-                    
-                    setTimeout(() => setIsAnimating(false), 600); // Đợi lật về xong
+                    setTimeout(() => setIsAnimating(false), 600);
+                }
+                setShowSearchModal(false);
+            };
+
+            const turnPage = (direction) => {
+                if (isAnimating) return; 
+                
+                if (direction === 'next' && currentPageIdx < pages.length - 1) {
+                    jumpToPage(currentPageIdx + 1);
+                } else if (direction === 'prev' && currentPageIdx > 0) {
+                    jumpToPage(currentPageIdx - 1);
                 }
             };
 
@@ -310,9 +347,11 @@
                 try {
                     const newDoc = await db.collection(COLLECTION_NAME).add({
                         author: author,
+                        fullName: author,
                         password: pwd,
                         items: [],
-                        createdAt: Date.now()
+                        createdAt: Date.now(),
+                        hasChangedPassword: true
                     });
                     
                     setEditUnlocked(prev => ({ ...prev, [newDoc.id]: true }));
@@ -320,9 +359,7 @@
                     showToast(`Đã lưu trang riêng cho ${author} vĩnh viễn!`);
                     
                     setTimeout(() => {
-                        setCurrentPageIdx(Math.max(0, pagesLengthRef.current - 1));
-                        setAnimState('fade-in');
-                        setPageFlipKey(prev => prev + 1);
+                        jumpToPage(Math.max(0, pagesLengthRef.current - 1));
                     }, 800);
 
                 } catch (error) {
@@ -334,15 +371,71 @@
                 e.preventDefault();
                 if (!currentPage) return;
                 
-                // Mật khẩu người dùng nhập vào phải khớp với chuỗi "Dohuyendieu" (chính xác từng ký tự)
+                // Mật khẩu người dùng nhập vào phải khớp
                 if (unlockInput.trim() === currentPage.password || currentPage.password === "") {
-                    setEditUnlocked(prev => ({ ...prev, [currentPage.id]: true }));
-                    setShowUnlockModal(false);
-                    setUnlockInput('');
-                    showToast(`Đã mở khóa trang của ${currentPage.author}!`);
+                    // Nếu là lần đầu tiên (chưa đổi mật khẩu)
+                    if (currentPage.hasChangedPassword === false) {
+                        setShowUnlockModal(false);
+                        setTempUnlockId(currentPage.id);
+                        setShowChangePassModal(true);
+                        showToast(`Chào ${currentPage.author}, vui lòng đổi mật khẩu mới để bảo mật!`);
+                    } else {
+                        setEditUnlocked(prev => ({ ...prev, [currentPage.id]: true }));
+                        setShowUnlockModal(false);
+                        setUnlockInput('');
+                        showToast(`Đã mở khóa trang của ${currentPage.author}!`);
+                    }
                 } else {
-                    showToast("❌ Sai mật khẩu. Mật mã là họ tên không dấu, không cách, hoa chữ cái đầu!");
+                    showToast("❌ Sai mật khẩu. Mật mã mặc định ban đầu là họ tên không dấu, không cách, hoa chữ cái đầu!");
                 }
+            };
+
+            const handleChangePassword = async (e) => {
+                e.preventDefault();
+                if (!newPasswordInput.trim()) {
+                    showToast("Mật khẩu không được để trống!");
+                    return;
+                }
+                try {
+                    await db.collection(COLLECTION_NAME).doc(tempUnlockId).update({
+                        password: newPasswordInput.trim(),
+                        hasChangedPassword: true
+                    });
+                    setEditUnlocked(prev => ({ ...prev, [tempUnlockId]: true }));
+                    setShowChangePassModal(false);
+                    setNewPasswordInput('');
+                    setUnlockInput('');
+                    showToast("✅ Đổi mật khẩu thành công! Trang đã được mở khóa.");
+                } catch (error) {
+                    showToast("❌ Lỗi khi đổi mật khẩu.");
+                }
+            };
+
+            const handleAdminLogin = (e) => {
+                e.preventDefault();
+                if (adminStep === 1) {
+                    if (adminPass1 === "13122008") {
+                        setAdminStep(2);
+                        showToast("✅ Xác minh bước 1 thành công!");
+                    } else {
+                        showToast("❌ Sai mật khẩu bước 1!");
+                    }
+                } else if (adminStep === 2) {
+                    if (adminPass2 === "131313") {
+                        setIsAdminUnlocked(true);
+                        closeAdminModal();
+                        showToast("👑 Chào mừng Admin! Đã cấp quyền chỉnh sửa toàn bộ trang.");
+                    } else {
+                        showToast("❌ Sai mật khẩu bước 2!");
+                    }
+                }
+            };
+
+            const closeAdminModal = () => {
+                setShowAdminModal(false);
+                setAdminStep(1);
+                setAdminPass1('');
+                setAdminPass2('');
             };
 
             const addItemToPage = async (newItem) => {
@@ -541,7 +634,16 @@
                         </div>
 
                         <div className="flex gap-2">
-                            {currentPage && (
+                            {/* Nút Tìm Kiếm */}
+                            <button onClick={() => setShowSearchModal(true)} className="bg-stone-800/50 text-stone-300 border border-stone-600 text-xs font-bold py-2 px-3 rounded-full hover:bg-stone-700 hover:text-stone-200 transition" title="Tìm kiếm trang">
+                                <i className="fa-solid fa-magnifying-glass"></i>
+                            </button>
+                            
+                            {isAdminUnlocked ? (
+                                <button onClick={() => setIsAdminUnlocked(false)} className="bg-fuchsia-600/20 text-fuchsia-400 border border-fuchsia-500/50 text-xs font-bold py-2 px-4 rounded-full flex items-center gap-2 hover:bg-fuchsia-600/40 transition" title="Tắt quyền Admin">
+                                    <i className="fa-solid fa-crown"></i> Admin Mở Khóa
+                                </button>
+                            ) : currentPage && (
                                 isUnlocked ? (
                                     <button onClick={() => { setEditUnlocked(prev => ({...prev, [currentPage.id]: false})); setSelectedItemId(null); }} className="bg-emerald-600/20 text-emerald-400 border border-emerald-500/50 text-xs font-bold py-2 px-4 rounded-full flex items-center gap-2 hover:bg-emerald-600/40 transition">
                                         <i className="fa-solid fa-lock-open"></i> Đang Mở Khóa
@@ -552,6 +654,9 @@
                                     </button>
                                 )
                             )}
+                            <button onClick={() => setShowAdminModal(true)} className="bg-stone-800/50 text-stone-400 border border-stone-600 text-xs font-bold py-2 px-3 rounded-full hover:bg-stone-700 hover:text-stone-200 transition" title="Đăng nhập Quản Trị Viên">
+                                <i className="fa-solid fa-user-shield"></i>
+                            </button>
                             <button onClick={() => setShowCreateModal(true)} className="bg-gradient-to-r from-amber-600 to-rose-600 text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg hover:scale-105 transition transform">
                                 <i className="fa-solid fa-plus"></i> Tạo Trang Mới
                             </button>
@@ -776,6 +881,58 @@
                         </div>
                     )}
 
+                    {/* MODAL MỚI: TÌM KIẾM TRANG SỔ */}
+                    {showSearchModal && (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[80] flex justify-center items-start pt-20 p-4">
+                            <div className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-md shadow-2xl">
+                                <div className="flex justify-between items-center border-b border-stone-800 pb-3 mb-4">
+                                    <h3 className="text-lg font-bold text-amber-100 flex items-center gap-2">
+                                        <i className="fa-solid fa-magnifying-glass"></i> Tìm Kiếm Sổ
+                                    </h3>
+                                    <button onClick={() => setShowSearchModal(false)} className="text-stone-400 hover:text-rose-400 transition">
+                                        <i className="fa-solid fa-times text-xl"></i>
+                                    </button>
+                                </div>
+                                <input 
+                                    type="text" 
+                                    autoFocus
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    placeholder="Nhập tên hiển thị hoặc họ tên đầy đủ..." 
+                                    className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 mb-4"
+                                />
+                                <div className="max-h-64 overflow-y-auto sticker-scroll pr-2 space-y-2">
+                                    {pages.map((p, idx) => {
+                                        // Tìm kiếm theo tên rút gọn (author) hoặc họ tên đầy đủ (fullName)
+                                        const matchAuthor = p.author && p.author.toLowerCase().includes(searchQuery.toLowerCase());
+                                        const matchFull = p.fullName && p.fullName.toLowerCase().includes(searchQuery.toLowerCase());
+                                        
+                                        if (!matchAuthor && !matchFull) return null;
+                                        
+                                        return (
+                                            <button 
+                                                key={p.id}
+                                                onClick={() => jumpToPage(idx)}
+                                                className="w-full text-left px-4 py-3 bg-stone-800 hover:bg-amber-900/50 border border-stone-700 hover:border-amber-700/50 rounded-xl transition flex justify-between items-center"
+                                            >
+                                                <div>
+                                                    <div className="text-amber-100 font-bold">{p.author}</div>
+                                                    {p.fullName && p.fullName !== p.author && (
+                                                        <div className="text-[10px] text-stone-400">{p.fullName}</div>
+                                                    )}
+                                                </div>
+                                                <span className="text-xs text-amber-500/70 font-semibold bg-amber-900/30 px-2 py-1 rounded">Trang {idx + 1}</span>
+                                            </button>
+                                        );
+                                    })}
+                                    {pages.filter(p => (p.author && p.author.toLowerCase().includes(searchQuery.toLowerCase())) || (p.fullName && p.fullName.toLowerCase().includes(searchQuery.toLowerCase()))).length === 0 && (
+                                        <div className="text-center text-stone-500 py-4 text-sm">Không tìm thấy bạn nào phù hợp.</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* MODAL 1: TẠO TRANG */}
                     {showCreateModal && (
                         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
@@ -801,32 +958,4 @@
 
                     {/* MODAL 2: MỞ KHÓA TRANG */}
                     {showUnlockModal && (
-                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-                            <form autoComplete="off" onSubmit={handleUnlock} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
-                                <h3 className="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">🔑 Mở Khóa Chỉnh Sửa</h3>
-                                <p className="text-xs text-stone-400 mb-4">Nhập mật mã (họ tên không dấu, không cách, viết hoa chữ cái đầu) để chỉnh sửa trang của <span className="font-bold text-amber-400">{currentPage?.author}</span>:</p>
-                                <input 
-                                    name="unlock_password_field" 
-                                    autoComplete="new-password" 
-                                    value={unlockInput} 
-                                    onChange={e => setUnlockInput(e.target.value)} 
-                                    type="password" 
-                                    className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 font-mono text-center tracking-widest text-lg mb-4" 
-                                    placeholder="Ví dụ: Dohuyendieu" 
-                                />
-                                <div className="flex gap-2">
-                                    <button type="button" onClick={() => setShowUnlockModal(false)} className="flex-1 bg-stone-800 text-white py-2 rounded-xl text-sm font-bold">Đóng</button>
-                                    <button type="submit" className="flex-1 bg-emerald-600 text-white py-2 rounded-xl text-sm font-bold">Mở Khóa Nào!</button>
-                                </div>
-                            </form>
-                        </div>
-                    )}
-                </div>
-            );
-        }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p
