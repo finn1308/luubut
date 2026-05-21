@@ -63,11 +63,15 @@
         }
         .book-cover {
             transform-origin: left center;
-            transition: transform 1.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+            transition: transform 1.2s cubic-bezier(0.645, 0.045, 0.355, 1), opacity 0.8s ease-in 0.2s;
             transform-style: preserve-3d;
+            z-index: 40;
         }
+        /* Fix lỗi hiển thị che khuất: Mở nắp nhẹ và làm mờ bìa đi để không che Khay đồ dùng */
         .book-cover.is-open {
-            transform: rotateY(-155deg); /* Lật sang trái, nghiêng nhẹ tạo cảm giác sách đang mở */
+            transform: rotateY(-140deg); 
+            opacity: 0;
+            pointer-events: none;
         }
         .backface-hidden {
             backface-visibility: hidden;
@@ -123,8 +127,8 @@
             console.error("Lỗi kết nối Firebase:", error);
         }
 
-        // Tạo Collection mới (v3) để cập nhật format mật khẩu mới
-        const COLLECTION_NAME = 'luubut_class_v4'; 
+        // Tạo Collection mới (v5) để áp dụng tên hiển thị riêng biệt và bổ sung fullName
+        const COLLECTION_NAME = 'luubut_class_v5'; 
 
         const STICKER_TEMPLATES = {
             phuongvi: { name: "Hoa Phượng", content: "https://cdn-icons-png.flaticon.com/512/3209/3209012.png" },
@@ -190,17 +194,21 @@
             const [showCreateModal, setShowCreateModal] = useState(false);
             const [showUnlockModal, setShowUnlockModal] = useState(false);
             
-            // State mới cho Đổi mật khẩu lần đầu
+            // State cho Đổi mật khẩu lần đầu
             const [showChangePassModal, setShowChangePassModal] = useState(false);
             const [newPasswordInput, setNewPasswordInput] = useState('');
             const [tempUnlockId, setTempUnlockId] = useState(null);
 
-            // State mới cho Admin
+            // State cho Admin
             const [showAdminModal, setShowAdminModal] = useState(false);
             const [adminStep, setAdminStep] = useState(1);
             const [adminPass1, setAdminPass1] = useState('');
             const [adminPass2, setAdminPass2] = useState('');
             const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+
+            // State cho Tìm Kiếm
+            const [showSearchModal, setShowSearchModal] = useState(false);
+            const [searchQuery, setSearchQuery] = useState('');
 
             const [unlockInput, setUnlockInput] = useState('');
             const [toast, setToast] = useState('');
@@ -230,6 +238,7 @@
                             const defaultRef = pagesRef.doc();
                             batch.set(defaultRef, {
                                 author: "Tập Thể Lớp Chúng Mình",
+                                fullName: "Tập Thể Lớp Chúng Mình",
                                 password: "",
                                 items: [],
                                 createdAt: Date.now(),
@@ -254,13 +263,19 @@
                             studentList.forEach((fullName, index) => {
                                 // Lấy đúng 2 chữ cuối trong tên làm Author
                                 const words = fullName.trim().split(' ');
-                                const shortName = words.length >= 2 ? words.slice(-2).join(' ') : fullName;
+                                let shortName = words.length >= 2 ? words.slice(-2).join(' ') : fullName;
                                 
+                                // Đổi tên hiển thị thủ công cho các bạn Phương Anh để tránh trùng lặp
+                                if (fullName === "Khuất Phương Anh") shortName = "Khuất Anh";
+                                else if (fullName === "Nguyễn Phương Anh") shortName = "Nguyễn Anh";
+                                else if (fullName === "Trần Phương Anh") shortName = "Trần Anh";
+
                                 const generatedPass = generatePassword(fullName);
 
                                 const docRef = pagesRef.doc();
                                 batch.set(docRef, {
                                     author: shortName,
+                                    fullName: fullName,
                                     password: generatedPass,
                                     items: [],
                                     createdAt: Date.now() + index + 1, // Tạo độ trễ milliseconds để hiển thị đúng thứ tự Alphabet
@@ -290,29 +305,40 @@
             const currentPage = pages[currentPageIdx];
             const isUnlocked = isAdminUnlocked || (currentPage ? editUnlocked[currentPage.id] : false);
 
-            const turnPage = (direction) => {
-                if (isAnimating) return; // Chống spam click liên tục
+            const jumpToPage = (targetIdx) => {
+                if (isAnimating || targetIdx === currentPageIdx) {
+                    setShowSearchModal(false);
+                    return;
+                }
+                setIsAnimating(true);
+                const direction = targetIdx > currentPageIdx ? 'next' : 'prev';
                 
-                if (direction === 'next' && currentPageIdx < pages.length - 1) {
-                    setIsAnimating(true);
-                    setAnimState('flip-out-left'); // Trang hiện tại lật đi
+                if (direction === 'next') {
+                    setAnimState('flip-out-left');
                     setSelectedItemId(null);
-                    
                     setTimeout(() => {
-                        setCurrentPageIdx(prev => prev + 1);
-                        setAnimState('fade-in'); // Trang mới hiện ra
+                        setCurrentPageIdx(targetIdx);
+                        setAnimState('fade-in');
                         setPageFlipKey(prev => prev + 1);
                         setTimeout(() => setIsAnimating(false), 300);
-                    }, 500); // Đợi lật úp xong
-                    
-                } else if (direction === 'prev' && currentPageIdx > 0) {
-                    setIsAnimating(true);
-                    setCurrentPageIdx(prev => prev - 1);
-                    setAnimState('flip-in-right'); // Trang cũ lật về
+                    }, 500);
+                } else {
+                    setCurrentPageIdx(targetIdx);
+                    setAnimState('flip-in-right');
                     setSelectedItemId(null);
                     setPageFlipKey(prev => prev + 1);
-                    
-                    setTimeout(() => setIsAnimating(false), 600); // Đợi lật về xong
+                    setTimeout(() => setIsAnimating(false), 600);
+                }
+                setShowSearchModal(false);
+            };
+
+            const turnPage = (direction) => {
+                if (isAnimating) return; 
+                
+                if (direction === 'next' && currentPageIdx < pages.length - 1) {
+                    jumpToPage(currentPageIdx + 1);
+                } else if (direction === 'prev' && currentPageIdx > 0) {
+                    jumpToPage(currentPageIdx - 1);
                 }
             };
 
@@ -325,6 +351,7 @@
                 try {
                     const newDoc = await db.collection(COLLECTION_NAME).add({
                         author: author,
+                        fullName: author,
                         password: pwd,
                         items: [],
                         createdAt: Date.now(),
@@ -336,9 +363,7 @@
                     showToast(`Đã lưu trang riêng cho ${author} vĩnh viễn!`);
                     
                     setTimeout(() => {
-                        setCurrentPageIdx(Math.max(0, pagesLengthRef.current - 1));
-                        setAnimState('fade-in');
-                        setPageFlipKey(prev => prev + 1);
+                        jumpToPage(Math.max(0, pagesLengthRef.current - 1));
                     }, 800);
 
                 } catch (error) {
@@ -365,7 +390,7 @@
                         showToast(`Đã mở khóa trang của ${currentPage.author}!`);
                     }
                 } else {
-                    showToast("❌ Sai mật khẩu. Mật mã là họ tên không dấu, không cách, hoa chữ cái đầu!");
+                    showToast("❌ Sai mật khẩu. Mật mã mặc định ban đầu là họ tên không dấu, không cách, hoa chữ cái đầu!");
                 }
             };
 
@@ -586,8 +611,8 @@
 
             return (
                 <div className="min-h-screen flex flex-col font-sans">
-                    {/* NAV BAR: Nâng z-index lên 60 để luôn nổi bật */}
-                    <nav className="bg-rose-950 text-rose-100 px-4 py-3 shadow-lg flex flex-col md:flex-row justify-between items-center gap-4 z-[60] sticky top-0 border-b-2 border-rose-800/50">
+                    {/* NAV BAR: Giảm z-index xuống 40 để các Modal nổi lên trên */}
+                    <nav className="bg-rose-950 text-rose-100 px-4 py-3 shadow-lg flex flex-col md:flex-row justify-between items-center gap-4 z-40 sticky top-0 border-b-2 border-rose-800/50">
                         <div className="flex items-center gap-3">
                             <span className="text-3xl">🎒</span>
                             <div>
@@ -613,6 +638,11 @@
                         </div>
 
                         <div className="flex gap-2">
+                            {/* Nút Tìm Kiếm */}
+                            <button onClick={() => setShowSearchModal(true)} className="bg-stone-800/50 text-stone-300 border border-stone-600 text-xs font-bold py-2 px-3 rounded-full hover:bg-stone-700 hover:text-stone-200 transition" title="Tìm kiếm trang">
+                                <i className="fa-solid fa-magnifying-glass"></i>
+                            </button>
+                            
                             {isAdminUnlocked ? (
                                 <button onClick={() => setIsAdminUnlocked(false)} className="bg-fuchsia-600/20 text-fuchsia-400 border border-fuchsia-500/50 text-xs font-bold py-2 px-4 rounded-full flex items-center gap-2 hover:bg-fuchsia-600/40 transition" title="Tắt quyền Admin">
                                     <i className="fa-solid fa-crown"></i> Admin Mở Khóa
@@ -642,8 +672,8 @@
                           onPointerUp={handlePointerUp}
                           onPointerLeave={handlePointerUp}>
                         
-                        {/* CỘT TRÁI: KHAY ĐỒ DÙNG - Nâng z-index lên 50 để nổi lên trên Bìa sổ */}
-                        <section className="md:col-span-4 bg-stone-900/60 p-5 rounded-[2rem] border border-stone-800 shadow-2xl backdrop-blur-md h-fit sticky top-24 relative z-50">
+                        {/* CỘT TRÁI: KHAY ĐỒ DÙNG - Đặt z-index 30 để nằm dưới lớp Modals */}
+                        <section className="md:col-span-4 bg-stone-900/60 p-5 rounded-[2rem] border border-stone-800 shadow-2xl backdrop-blur-md h-fit sticky top-24 relative z-30">
                             <h2 className="text-xl font-bold text-amber-200 border-b border-stone-700 pb-3 mb-4">🎨 Khay Đồ Dùng</h2>
                             
                             <div className={`space-y-5 ${(!isUnlocked || !isBookOpen) ? 'opacity-50 pointer-events-none' : 'transition-opacity duration-500'}`}>
@@ -699,9 +729,9 @@
                             )}
 
                             <div className="relative w-full max-w-[650px] mx-auto h-full min-h-[700px] mt-2">
-                                {/* BÌA SỔ (COVER) - Giảm z-index xuống 30 để luồn dưới Khay Đồ Dùng khi mở ra */}
+                                {/* BÌA SỔ (COVER) - Đã được fix lỗi hiển thị, cover sẽ mờ dần khi mở ra */}
                                 <div 
-                                    className={`book-cover absolute inset-0 z-30 w-full h-full shadow-[20px_0_30px_rgba(0,0,0,0.5)] rounded-r-3xl border-l-[16px] border-[#1a0f0a] ${isBookOpen ? 'is-open pointer-events-none' : 'cursor-pointer hover:scale-[1.02]'}`}
+                                    className={`book-cover absolute inset-0 w-full h-full shadow-[20px_0_30px_rgba(0,0,0,0.5)] rounded-r-3xl border-l-[16px] border-[#1a0f0a] ${isBookOpen ? 'is-open' : 'cursor-pointer hover:scale-[1.02]'}`}
                                     onClick={() => !isBookOpen && setIsBookOpen(true)}
                                 >
                                     {/* Mặt trước của Bìa */}
@@ -726,7 +756,7 @@
                                         </div>
                                     </div>
 
-                                    {/* Mặt sau của Bìa (Phần trang giấy bên trái khi lật ra) */}
+                                    {/* Mặt sau của Bìa */}
                                     <div className="absolute inset-0 backface-hidden rotate-y-180 bg-[#faf6eb] rounded-l-3xl shadow-inner border-r-[16px] border-[#2d1b13] flex items-center justify-center overflow-hidden">
                                         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#5a3d28_1px,transparent_1px)] [background-size:16px_16px]"></div>
                                         <div className="text-center rotate-[-10deg] opacity-60">
@@ -737,7 +767,7 @@
                                 </div>
 
                                 {/* PHẦN TRANG GIẤY BÊN TRONG (RIGHT PAGE) */}
-                                <div className={`absolute inset-0 bg-[#4a3525] p-2 md:p-4 rounded-r-3xl shadow-2xl border-l-[16px] border-[#2d1b13] transition-opacity duration-[1.2s] ${isBookOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                                <div className={`absolute inset-0 bg-[#4a3525] p-2 md:p-4 rounded-r-3xl shadow-2xl border-l-[16px] border-[#2d1b13] transition-opacity duration-[1.2s] ${isBookOpen ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none'}`}>
                                     <div className="absolute left-0 top-0 bottom-0 w-10 book-spine z-20 border-r border-black/40"></div>
                                     <div className="w-full h-full relative pl-8">
                                         <div 
@@ -766,7 +796,7 @@
                                                             <div 
                                                                 key={item.id}
                                                                 onPointerDown={(e) => handlePointerDown(e, item)}
-                                                                className={`absolute cursor-${isUnlocked ? 'grab' : 'default'} ${draggingItem?.id === item.id ? 'cursor-grabbing opacity-80' : ''} touch-none select-none`}
+                                                                className={`absolute ${isUnlocked ? 'cursor-grab' : 'cursor-default'} ${draggingItem?.id === item.id ? 'opacity-80' : ''} touch-none select-none`}
                                                                 style={{
                                                                     left: `${item.x}%`, top: `${item.y}%`,
                                                                     transform: `translate(-50%, -50%)`,
@@ -847,17 +877,67 @@
                         </section>
                     </main>
 
-                    {}
                     {toast && (
-                        <div className="fixed bottom-5 right-5 bg-stone-900 text-amber-200 px-5 py-3 rounded-xl shadow-2xl border border-amber-500/50 z-50 flex items-center gap-3 animate-bounce">
+                        <div className="fixed bottom-5 right-5 bg-stone-900 text-amber-200 px-5 py-3 rounded-xl shadow-2xl border border-amber-500/50 z-[120] flex items-center gap-3 animate-bounce">
                             <i className="fa-solid fa-bell text-amber-500"></i>
                             <span className="text-sm font-bold">{toast}</span>
                         </div>
                     )}
 
+                    {/* MODAL: TÌM KIẾM TRANG SỔ (Z-index cao nhất) */}
+                    {showSearchModal && (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex justify-center items-start pt-20 p-4">
+                            <div className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-md shadow-2xl">
+                                <div className="flex justify-between items-center border-b border-stone-800 pb-3 mb-4">
+                                    <h3 className="text-lg font-bold text-amber-100 flex items-center gap-2">
+                                        <i className="fa-solid fa-magnifying-glass"></i> Tìm Kiếm Sổ
+                                    </h3>
+                                    <button onClick={() => setShowSearchModal(false)} className="text-stone-400 hover:text-rose-400 transition">
+                                        <i className="fa-solid fa-times text-xl"></i>
+                                    </button>
+                                </div>
+                                <input 
+                                    type="text" 
+                                    autoFocus
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    placeholder="Nhập tên hiển thị hoặc họ tên đầy đủ..." 
+                                    className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 mb-4"
+                                />
+                                <div className="max-h-64 overflow-y-auto sticker-scroll pr-2 space-y-2">
+                                    {pages.map((p, idx) => {
+                                        const matchAuthor = p.author && p.author.toLowerCase().includes(searchQuery.toLowerCase());
+                                        const matchFull = p.fullName && p.fullName.toLowerCase().includes(searchQuery.toLowerCase());
+                                        
+                                        if (!matchAuthor && !matchFull) return null;
+                                        
+                                        return (
+                                            <button 
+                                                key={p.id}
+                                                onClick={() => jumpToPage(idx)}
+                                                className="w-full text-left px-4 py-3 bg-stone-800 hover:bg-amber-900/50 border border-stone-700 hover:border-amber-700/50 rounded-xl transition flex justify-between items-center"
+                                            >
+                                                <div>
+                                                    <div className="text-amber-100 font-bold">{p.author}</div>
+                                                    {p.fullName && p.fullName !== p.author && (
+                                                        <div className="text-[10px] text-stone-400">{p.fullName}</div>
+                                                    )}
+                                                </div>
+                                                <span className="text-xs text-amber-500/70 font-semibold bg-amber-900/30 px-2 py-1 rounded">Trang {idx + 1}</span>
+                                            </button>
+                                        );
+                                    })}
+                                    {pages.filter(p => (p.author && p.author.toLowerCase().includes(searchQuery.toLowerCase())) || (p.fullName && p.fullName.toLowerCase().includes(searchQuery.toLowerCase()))).length === 0 && (
+                                        <div className="text-center text-stone-500 py-4 text-sm">Không tìm thấy bạn nào phù hợp.</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* MODAL 1: TẠO TRANG */}
                     {showCreateModal && (
-                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
                             <form autoComplete="off" onSubmit={handleCreatePage} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
                                 <h3 className="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">📖 Tạo Trang Sách Của Bạn</h3>
                                 <div className="space-y-4">
@@ -880,7 +960,7 @@
 
                     {/* MODAL 2: MỞ KHÓA TRANG */}
                     {showUnlockModal && (
-                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
                             <form autoComplete="off" onSubmit={handleUnlock} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
                                 <h3 className="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">🔑 Mở Khóa Chỉnh Sửa</h3>
                                 <p className="text-xs text-stone-400 mb-4">Nhập mật mã (họ tên không dấu, không cách, viết hoa chữ cái đầu) để chỉnh sửa trang của <span className="font-bold text-amber-400">{currentPage?.author}</span>:</p>
@@ -903,7 +983,7 @@
 
                     {/* MODAL 3: ĐỔI MẬT KHẨU LẦN ĐẦU */}
                     {showChangePassModal && (
-                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
                             <form autoComplete="off" onSubmit={handleChangePassword} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
                                 <h3 className="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">🔐 Đổi Mật Khẩu Lần Đầu</h3>
                                 <p className="text-xs text-stone-400 mb-4">Vì lý do bảo mật, vui lòng tạo mật khẩu mới riêng cho bạn để bảo vệ trang lưu bút này:</p>
@@ -926,7 +1006,7 @@
 
                     {/* MODAL 4: ADMIN QUẢN TRỊ VIÊN */}
                     {showAdminModal && (
-                        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[70] flex justify-center items-center p-4">
+                        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
                             <form autoComplete="off" onSubmit={handleAdminLogin} className="bg-stone-900 border border-fuchsia-800/50 p-6 rounded-3xl w-full max-w-sm shadow-[0_0_40px_rgba(162,28,175,0.3)]">
                                 <h3 className="text-lg font-bold text-fuchsia-400 border-b border-stone-800 pb-3 mb-4 flex items-center gap-2">
                                     <i className="fa-solid fa-crown"></i> Quyền Quản Trị Viên
