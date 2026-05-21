@@ -67,7 +67,7 @@
             transform-style: preserve-3d;
             z-index: 40;
         }
-        /* Fix lỗi hiển thị che khuất: Mở nắp nhẹ và làm mờ bìa đi để không che Khay đồ dùng */
+        /* Mở nắp nhẹ và làm mờ bìa đi để không che Khay đồ dùng */
         .book-cover.is-open {
             transform: rotateY(-140deg); 
             opacity: 0;
@@ -88,7 +88,6 @@
         ::-webkit-scrollbar-track { background: #3b271d; }
         ::-webkit-scrollbar-thumb { background: #8b5a2b; border-radius: 4px; }
         
-        /* Chỉnh Scrollbar riêng cho mục Sticker */
         .sticker-scroll::-webkit-scrollbar { width: 4px; }
         .sticker-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 4px; }
         .sticker-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
@@ -127,7 +126,6 @@
             console.error("Lỗi kết nối Firebase:", error);
         }
 
-        // Tạo Collection mới (v5) để áp dụng tên hiển thị riêng biệt và bổ sung fullName
         const COLLECTION_NAME = 'luubut_class_v5'; 
 
         const STICKER_TEMPLATES = {
@@ -160,13 +158,13 @@
             return 'Mới đây';
         };
 
-        // Hàm tạo định dạng mật khẩu: không dấu, không cách, hoa chữ cái đầu (VD: Đỗ Huyền Diệu -> Dohuyendieu)
         const generatePassword = (fullName) => {
-            let str = fullName.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // Bỏ dấu tiếng Việt
-            str = str.replace(/đ/g, "d").replace(/Đ/g, "D"); // Xử lý riêng chữ đ/Đ
-            str = str.replace(/\s+/g, "").toLowerCase(); // Bỏ khoảng trắng và đưa về in thường
+            if (!fullName) return "";
+            let str = fullName.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); 
+            str = str.replace(/đ/g, "d").replace(/Đ/g, "D"); 
+            str = str.replace(/\s+/g, "").toLowerCase(); 
             if (str.length > 0) {
-                str = str.charAt(0).toUpperCase() + str.slice(1); // Viết hoa chữ cái đầu
+                str = str.charAt(0).toUpperCase() + str.slice(1); 
             }
             return str;
         };
@@ -177,12 +175,12 @@
             const [pageFlipKey, setPageFlipKey] = useState(0); 
             const [editUnlocked, setEditUnlocked] = useState({}); 
             
-            // State quản lý việc Đóng/Mở sổ
             const [isBookOpen, setIsBookOpen] = useState(false);
-            
-            // State quản lý Animation chuyển trang
             const [animState, setAnimState] = useState('fade-in');
             const [isAnimating, setIsAnimating] = useState(false);
+            
+            // Mobile toggle state cho Khay đồ dùng
+            const [isMobileTrayOpen, setIsMobileTrayOpen] = useState(false);
             
             const [textInput, setTextInput] = useState('');
             const [inkColor, setInkColor] = useState('violet');
@@ -193,20 +191,16 @@
 
             const [showCreateModal, setShowCreateModal] = useState(false);
             const [showUnlockModal, setShowUnlockModal] = useState(false);
-            
-            // State cho Đổi mật khẩu lần đầu
             const [showChangePassModal, setShowChangePassModal] = useState(false);
             const [newPasswordInput, setNewPasswordInput] = useState('');
             const [tempUnlockId, setTempUnlockId] = useState(null);
 
-            // State cho Admin
             const [showAdminModal, setShowAdminModal] = useState(false);
             const [adminStep, setAdminStep] = useState(1);
             const [adminPass1, setAdminPass1] = useState('');
             const [adminPass2, setAdminPass2] = useState('');
             const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
 
-            // State cho Tìm Kiếm
             const [showSearchModal, setShowSearchModal] = useState(false);
             const [searchQuery, setSearchQuery] = useState('');
 
@@ -222,7 +216,6 @@
                 setTimeout(() => setToast(''), 4000);
             };
 
-            // Init Firebase listener
             useEffect(() => {
                 if (!db) return;
                 const pagesRef = db.collection(COLLECTION_NAME);
@@ -232,59 +225,58 @@
                     
                     if (loadedPages.length === 0) {
                         const initData = async () => {
-                            const batch = db.batch();
-                            
-                            // 1. Tạo trang mở đầu của Tập Thể Lớp
-                            const defaultRef = pagesRef.doc();
-                            batch.set(defaultRef, {
-                                author: "Tập Thể Lớp Chúng Mình",
-                                fullName: "Tập Thể Lớp Chúng Mình",
-                                password: "",
-                                items: [],
-                                createdAt: Date.now(),
-                                hasChangedPassword: true // Không yêu cầu đổi pass cho trang chung
-                            });
-
-                            // 2. Tạo 44 trang profile dựa theo danh sách lớp
-                            const studentList = [
-                                "Khuất Phương Anh", "Nguyễn Phương Anh", "Nguyễn Thị Ngọc Anh", "Trần Phương Anh",
-                                "Trần Xuân Bắc", "Trần Thị Tâm Chuyên", "Đỗ Huyền Diệu", "Cấn Vũ Hạnh Dung",
-                                "Hoàng Ngọc Khánh Dương", "Nguyễn Thái Dương", "Trần Thị Ánh Dương", "Hoàng Thị Mai Đào",
-                                "Đinh Hương Giang", "Đỗ Bảo Hà", "Nguyễn Thị Hồng Hạnh", "Đỗ Doãn Huy Hiệp",
-                                "Vũ Trung Hiếu", "Kiều Tuấn Hùng", "Nguyễn Văn Huy", "Trần Huy Khoa",
-                                "Trương Ngọc Linh", "Nguyễn Hoàng Khánh Loan", "Nguyễn Thành Long", "Vũ Phúc Lộc",
-                                "Đỗ Hữu Minh", "Hoàng Đình Anh Minh", "Hoàng Đình Gia Minh", "Nguyễn Bá Duy Minh",
-                                "Đỗ Hà My", "Lê Đức Ngọc", "Tăng Yến Nhi", "Hoàng Bảo Như",
-                                "Nguyễn Kỳ Quốc", "Đỗ Thị Phương Thảo", "Hoàng Thị Phương Thảo", "Nguyễn Lưu Hạ Thảo",
-                                "Dương Thị Nguyệt Thu", "Đỗ Thị Thu", "Trần Thị Thanh Thuý", "Đỗ Huyền Trang",
-                                "Nguyễn Thị Thùy Trang", "Hà Hoàng Phương Trinh", "Nguyễn Thị Thu Uyên", "Trần Thị Bảo Yến"
-                            ];
-
-                            studentList.forEach((fullName, index) => {
-                                // Lấy đúng 2 chữ cuối trong tên làm Author
-                                const words = fullName.trim().split(' ');
-                                let shortName = words.length >= 2 ? words.slice(-2).join(' ') : fullName;
+                            try {
+                                const batch = db.batch();
                                 
-                                // Đổi tên hiển thị thủ công cho các bạn Phương Anh để tránh trùng lặp
-                                if (fullName === "Khuất Phương Anh") shortName = "Khuất Anh";
-                                else if (fullName === "Nguyễn Phương Anh") shortName = "Nguyễn Anh";
-                                else if (fullName === "Trần Phương Anh") shortName = "Trần Anh";
-
-                                const generatedPass = generatePassword(fullName);
-
-                                const docRef = pagesRef.doc();
-                                batch.set(docRef, {
-                                    author: shortName,
-                                    fullName: fullName,
-                                    password: generatedPass,
+                                const defaultRef = pagesRef.doc();
+                                batch.set(defaultRef, {
+                                    author: "Tập Thể Lớp Chúng Mình",
+                                    fullName: "Tập Thể Lớp Chúng Mình",
+                                    password: "",
                                     items: [],
-                                    createdAt: Date.now() + index + 1, // Tạo độ trễ milliseconds để hiển thị đúng thứ tự Alphabet
-                                    hasChangedPassword: false // Đánh dấu cần đổi mật khẩu ở lần đăng nhập đầu tiên
+                                    createdAt: Date.now(),
+                                    hasChangedPassword: true
                                 });
-                            });
 
-                            // Gửi lệnh khởi tạo hàng loạt lên Database
-                            await batch.commit();
+                                const studentList = [
+                                    "Khuất Phương Anh", "Nguyễn Phương Anh", "Nguyễn Thị Ngọc Anh", "Trần Phương Anh",
+                                    "Trần Xuân Bắc", "Trần Thị Tâm Chuyên", "Đỗ Huyền Diệu", "Cấn Vũ Hạnh Dung",
+                                    "Hoàng Ngọc Khánh Dương", "Nguyễn Thái Dương", "Trần Thị Ánh Dương", "Hoàng Thị Mai Đào",
+                                    "Đinh Hương Giang", "Đỗ Bảo Hà", "Nguyễn Thị Hồng Hạnh", "Đỗ Doãn Huy Hiệp",
+                                    "Vũ Trung Hiếu", "Kiều Tuấn Hùng", "Nguyễn Văn Huy", "Trần Huy Khoa",
+                                    "Trương Ngọc Linh", "Nguyễn Hoàng Khánh Loan", "Nguyễn Thành Long", "Vũ Phúc Lộc",
+                                    "Đỗ Hữu Minh", "Hoàng Đình Anh Minh", "Hoàng Đình Gia Minh", "Nguyễn Bá Duy Minh",
+                                    "Đỗ Hà My", "Lê Đức Ngọc", "Tăng Yến Nhi", "Hoàng Bảo Như",
+                                    "Nguyễn Kỳ Quốc", "Đỗ Thị Phương Thảo", "Hoàng Thị Phương Thảo", "Nguyễn Lưu Hạ Thảo",
+                                    "Dương Thị Nguyệt Thu", "Đỗ Thị Thu", "Trần Thị Thanh Thuý", "Đỗ Huyền Trang",
+                                    "Nguyễn Thị Thùy Trang", "Hà Hoàng Phương Trinh", "Nguyễn Thị Thu Uyên", "Trần Thị Bảo Yến"
+                                ];
+
+                                studentList.forEach((fullName, index) => {
+                                    const words = fullName.trim().split(' ');
+                                    let shortName = words.length >= 2 ? words.slice(-2).join(' ') : fullName;
+                                    
+                                    if (fullName === "Khuất Phương Anh") shortName = "Khuất Anh";
+                                    else if (fullName === "Nguyễn Phương Anh") shortName = "Nguyễn Anh";
+                                    else if (fullName === "Trần Phương Anh") shortName = "Trần Anh";
+
+                                    const generatedPass = generatePassword(fullName);
+
+                                    const docRef = pagesRef.doc();
+                                    batch.set(docRef, {
+                                        author: shortName,
+                                        fullName: fullName,
+                                        password: generatedPass,
+                                        items: [],
+                                        createdAt: Date.now() + index + 1,
+                                        hasChangedPassword: false
+                                    });
+                                });
+
+                                await batch.commit();
+                            } catch (e) {
+                                console.error("Lỗi khởi tạo:", e);
+                            }
                         };
                         initData();
                     } else {
@@ -303,7 +295,7 @@
             }, [currentPageIdx]);
 
             const currentPage = pages[currentPageIdx];
-            const isUnlocked = isAdminUnlocked || (currentPage ? editUnlocked[currentPage.id] : false);
+            const isUnlocked = isAdminUnlocked || (currentPage && currentPage.id ? !!editUnlocked[currentPage.id] : false);
 
             const jumpToPage = (targetIdx) => {
                 if (isAnimating || targetIdx === currentPageIdx) {
@@ -375,9 +367,7 @@
                 e.preventDefault();
                 if (!currentPage) return;
                 
-                // Mật khẩu người dùng nhập vào phải khớp
                 if (unlockInput.trim() === currentPage.password || currentPage.password === "") {
-                    // Nếu là lần đầu tiên (chưa đổi mật khẩu)
                     if (currentPage.hasChangedPassword === false) {
                         setShowUnlockModal(false);
                         setTempUnlockId(currentPage.id);
@@ -387,6 +377,12 @@
                         setEditUnlocked(prev => ({ ...prev, [currentPage.id]: true }));
                         setShowUnlockModal(false);
                         setUnlockInput('');
+                        
+                        // Trên thiết bị di động, tự động mở khay đồ dùng khi mở khóa thành công để họ dễ dùng
+                        if(window.innerWidth < 768) {
+                             setIsMobileTrayOpen(true);
+                        }
+                        
                         showToast(`Đã mở khóa trang của ${currentPage.author}!`);
                     }
                 } else {
@@ -409,6 +405,11 @@
                     setShowChangePassModal(false);
                     setNewPasswordInput('');
                     setUnlockInput('');
+                    
+                    if(window.innerWidth < 768) {
+                         setIsMobileTrayOpen(true);
+                    }
+                    
                     showToast("✅ Đổi mật khẩu thành công! Trang đã được mở khóa.");
                 } catch (error) {
                     showToast("❌ Lỗi khi đổi mật khẩu.");
@@ -524,14 +525,15 @@
 
             const deleteItem = async (itemId) => {
                 if (!isUnlocked) return;
-                const updatedItems = currentPage.items.filter(i => i.id !== itemId);
+                const itemsList = currentPage.items || [];
+                const updatedItems = itemsList.filter(i => i.id !== itemId);
                 await db.collection(COLLECTION_NAME).doc(currentPage.id).update({ items: updatedItems });
                 setSelectedItemId(null);
             };
 
             const updateItemTransform = async (itemId, type, direction) => {
                 if (!isUnlocked) return;
-                const items = [...currentPage.items];
+                const items = [...(currentPage.items || [])];
                 const index = items.findIndex(i => i.id === itemId);
                 if (index === -1) return;
 
@@ -564,7 +566,8 @@
                 newX = Math.max(5, Math.min(95, newX));
                 newY = Math.max(5, Math.min(95, newY));
 
-                const targetItem = currentPage.items.find(i => i.id === draggingItem.id);
+                const itemsList = currentPage.items || [];
+                const targetItem = itemsList.find(i => i.id === draggingItem.id);
                 if (targetItem && targetItem.type === 'text') {
                     const yPx = (newY / 100) * notebookRect.height;
                     const snappedYPx = Math.round((yPx - 60) / 24) * 24 + 60;
@@ -573,11 +576,14 @@
 
                 const updatedPages = [...pages];
                 const pageIdx = updatedPages.findIndex(p => p.id === currentPage.id);
-                const itemIdx = updatedPages[pageIdx].items.findIndex(i => i.id === draggingItem.id);
-                
-                updatedPages[pageIdx].items[itemIdx].x = newX;
-                updatedPages[pageIdx].items[itemIdx].y = newY;
-                setPages(updatedPages);
+                if (pageIdx !== -1 && updatedPages[pageIdx].items) {
+                    const itemIdx = updatedPages[pageIdx].items.findIndex(i => i.id === draggingItem.id);
+                    if (itemIdx !== -1) {
+                        updatedPages[pageIdx].items[itemIdx].x = newX;
+                        updatedPages[pageIdx].items[itemIdx].y = newY;
+                        setPages(updatedPages);
+                    }
+                }
             };
 
             const handlePointerUp = async () => {
@@ -586,13 +592,14 @@
                     return;
                 }
                 
-                const finalItem = currentPage.items.find(i => i.id === draggingItem.id);
+                const itemsList = currentPage.items || [];
+                const finalItem = itemsList.find(i => i.id === draggingItem.id);
                 setDraggingItem(null);
                 
                 if (finalItem) {
                     try {
                         await db.collection(COLLECTION_NAME).doc(currentPage.id).update({
-                            items: currentPage.items
+                            items: itemsList
                         });
                     } catch(err) {
                         console.error("Lỗi cập nhật:", err);
@@ -611,7 +618,7 @@
 
             return (
                 <div className="min-h-screen flex flex-col font-sans">
-                    {/* NAV BAR: Giảm z-index xuống 40 để các Modal nổi lên trên */}
+                    {/* NAV BAR */}
                     <nav className="bg-rose-950 text-rose-100 px-4 py-3 shadow-lg flex flex-col md:flex-row justify-between items-center gap-4 z-40 sticky top-0 border-b-2 border-rose-800/50">
                         <div className="flex items-center gap-3">
                             <span className="text-3xl">🎒</span>
@@ -637,7 +644,7 @@
                             </button>
                         </div>
 
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap justify-center gap-2">
                             {/* Nút Tìm Kiếm */}
                             <button onClick={() => setShowSearchModal(true)} className="bg-stone-800/50 text-stone-300 border border-stone-600 text-xs font-bold py-2 px-3 rounded-full hover:bg-stone-700 hover:text-stone-200 transition" title="Tìm kiếm trang">
                                 <i className="fa-solid fa-magnifying-glass"></i>
@@ -647,7 +654,7 @@
                                 <button onClick={() => setIsAdminUnlocked(false)} className="bg-fuchsia-600/20 text-fuchsia-400 border border-fuchsia-500/50 text-xs font-bold py-2 px-4 rounded-full flex items-center gap-2 hover:bg-fuchsia-600/40 transition" title="Tắt quyền Admin">
                                     <i className="fa-solid fa-crown"></i> Admin Mở Khóa
                                 </button>
-                            ) : currentPage && (
+                            ) : (currentPage ? (
                                 isUnlocked ? (
                                     <button onClick={() => { setEditUnlocked(prev => ({...prev, [currentPage.id]: false})); setSelectedItemId(null); }} className="bg-emerald-600/20 text-emerald-400 border border-emerald-500/50 text-xs font-bold py-2 px-4 rounded-full flex items-center gap-2 hover:bg-emerald-600/40 transition">
                                         <i className="fa-solid fa-lock-open"></i> Đang Mở Khóa
@@ -657,7 +664,8 @@
                                         <i className="fa-solid fa-lock"></i> Mở Khóa Sửa
                                     </button>
                                 )
-                            )}
+                            ) : null)}
+                            
                             <button onClick={() => setShowAdminModal(true)} className="bg-stone-800/50 text-stone-400 border border-stone-600 text-xs font-bold py-2 px-3 rounded-full hover:bg-stone-700 hover:text-stone-200 transition" title="Đăng nhập Quản Trị Viên">
                                 <i className="fa-solid fa-user-shield"></i>
                             </button>
@@ -672,64 +680,77 @@
                           onPointerUp={handlePointerUp}
                           onPointerLeave={handlePointerUp}>
                         
-                        {/* CỘT TRÁI: KHAY ĐỒ DÙNG - Đặt z-index 30 để nằm dưới lớp Modals */}
-                        <section className="md:col-span-4 bg-stone-900/60 p-5 rounded-[2rem] border border-stone-800 shadow-2xl backdrop-blur-md h-fit sticky top-24 relative z-30">
-                            <h2 className="text-xl font-bold text-amber-200 border-b border-stone-700 pb-3 mb-4">🎨 Khay Đồ Dùng</h2>
+                        {/* CỘT TRÁI: KHAY ĐỒ DÙNG - Tối ưu cho thiết bị di động */}
+                        <section className="md:col-span-4 bg-stone-900/60 p-4 md:p-5 rounded-3xl md:rounded-[2rem] border border-stone-800 shadow-2xl backdrop-blur-md h-fit md:sticky md:top-24 relative z-30">
                             
-                            <div className={`space-y-5 ${(!isUnlocked || !isBookOpen) ? 'opacity-50 pointer-events-none' : 'transition-opacity duration-500'}`}>
-                                {/* Tool 1 */}
-                                <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
-                                    <label className="text-xs text-stone-400 font-bold mb-2 block">1. Viết lời chúc (Mực máy)</label>
-                                    <form onSubmit={handleAddText} className="flex flex-col gap-2">
-                                        <input type="text" value={textInput} onChange={e => setTextInput(e.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-3 py-2 text-sm text-stone-200 focus:ring-1 focus:ring-amber-500 outline-none" placeholder="Viết lên trang giấy..." />
-                                        <div className="flex justify-between items-center mt-2">
-                                            <div className="flex gap-2">
-                                                {['violet', 'blue', 'black', 'red'].map(c => (
-                                                    <button key={c} type="button" onClick={() => setInkColor(c)} className={`w-5 h-5 rounded-full ${c==='violet'?'bg-indigo-500':c==='blue'?'bg-sky-500':c==='red'?'bg-rose-500':'bg-stone-800'} ${inkColor===c ? 'border-2 border-white scale-110' : 'border border-transparent'}`}></button>
-                                                ))}
+                            {/* Nút Toggle mở/ẩn khay trên Mobile */}
+                            <div 
+                                className="flex justify-between items-center md:border-b border-stone-700 md:pb-3 md:mb-4 cursor-pointer md:cursor-default"
+                                onClick={() => { if(window.innerWidth < 768) setIsMobileTrayOpen(!isMobileTrayOpen); }}
+                            >
+                                <h2 className="text-xl font-bold text-amber-200"><i className="fa-solid fa-palette mr-2"></i> Khay Đồ Dùng</h2>
+                                <button className="md:hidden text-amber-200 bg-stone-800 border border-stone-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-md">
+                                    {isMobileTrayOpen ? 'Ẩn đi' : 'Mở ra'} <i className={`fa-solid ${isMobileTrayOpen ? 'fa-chevron-up' : 'fa-chevron-down'} ml-1`}></i>
+                                </button>
+                            </div>
+                            
+                            {/* Nội dung Khay Đồ Dùng (Sẽ bị ẩn trên mobile nếu chưa bấm Mở ra) */}
+                            <div className={`${isMobileTrayOpen ? 'block mt-4 border-t border-stone-700 pt-4' : 'hidden'} md:block md:mt-0 md:border-t-0 md:pt-0`}>
+                                <div className={`space-y-5 ${(!isUnlocked || !isBookOpen) ? 'opacity-50 pointer-events-none' : 'transition-opacity duration-500'}`}>
+                                    {/* Tool 1 */}
+                                    <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
+                                        <label className="text-xs text-stone-400 font-bold mb-2 block">1. Viết lời chúc (Mực máy)</label>
+                                        <form onSubmit={handleAddText} className="flex flex-col gap-2">
+                                            <input type="text" value={textInput} onChange={e => setTextInput(e.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-3 py-2 text-sm text-stone-200 focus:ring-1 focus:ring-amber-500 outline-none" placeholder="Viết lên trang giấy..." />
+                                            <div className="flex justify-between items-center mt-2">
+                                                <div className="flex gap-2">
+                                                    {['violet', 'blue', 'black', 'red'].map(c => (
+                                                        <button key={c} type="button" onClick={() => setInkColor(c)} className={`w-5 h-5 rounded-full ${c==='violet'?'bg-indigo-500':c==='blue'?'bg-sky-500':c==='red'?'bg-rose-500':'bg-stone-800'} ${inkColor===c ? 'border-2 border-white scale-110' : 'border border-transparent'}`}></button>
+                                                    ))}
+                                                </div>
+                                                <div className="flex gap-1 text-[10px]">
+                                                    <button type="button" onClick={() => setFontSize('font-handwriting')} className={`px-2 py-1 rounded ${fontSize==='font-handwriting'?'bg-stone-700 text-white':'text-stone-400'}`}>Bút Bi</button>
+                                                    <button type="button" onClick={() => setFontSize('font-cursive')} className={`px-2 py-1 rounded ${fontSize==='font-cursive'?'bg-stone-700 text-white':'text-stone-400'}`}>Lá Tre</button>
+                                                </div>
                                             </div>
-                                            <div className="flex gap-1 text-[10px]">
-                                                <button type="button" onClick={() => setFontSize('font-handwriting')} className={`px-2 py-1 rounded ${fontSize==='font-handwriting'?'bg-stone-700 text-white':'text-stone-400'}`}>Bút Bi</button>
-                                                <button type="button" onClick={() => setFontSize('font-cursive')} className={`px-2 py-1 rounded ${fontSize==='font-cursive'?'bg-stone-700 text-white':'text-stone-400'}`}>Lá Tre</button>
-                                            </div>
-                                        </div>
-                                        <button type="submit" className="mt-2 bg-stone-700 hover:bg-stone-600 text-white text-xs py-2 rounded-lg font-bold">Dán Chữ Lên Vở</button>
-                                    </form>
-                                </div>
-
-                                {/* Tool 2: Sticker */}
-                                <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
-                                    <label className="text-xs text-stone-400 font-bold mb-2 block">2. Dán Sticker</label>
-                                    <div className="grid grid-cols-4 gap-2 max-h-36 overflow-y-auto sticker-scroll pr-1">
-                                        {Object.keys(STICKER_TEMPLATES).map(key => (
-                                            <button key={key} onClick={() => handleAddSticker(key)} className="bg-stone-900 hover:bg-amber-900/50 border border-stone-700 p-2 rounded-xl flex flex-col items-center justify-center gap-1 transition">
-                                                <img src={STICKER_TEMPLATES[key].content} className="w-8 h-8 object-contain drop-shadow-md opacity-90" />
-                                            </button>
-                                        ))}
+                                            <button type="submit" className="mt-2 bg-stone-700 hover:bg-stone-600 text-white text-xs py-2 rounded-lg font-bold">Dán Chữ Lên Vở</button>
+                                        </form>
                                     </div>
-                                </div>
 
-                                {/* Tool 3 */}
-                                <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
-                                    <label className="text-xs text-stone-400 font-bold mb-2 block">3. Kẹp Ảnh Kỷ Niệm</label>
-                                    <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
-                                    <button onClick={() => fileInputRef.current.click()} className="w-full bg-stone-900 hover:bg-stone-700 text-amber-200 border border-stone-600 border-dashed text-xs py-4 rounded-xl flex items-center justify-center gap-2 transition">
-                                        <i className="fa-solid fa-camera"></i> Chọn & Dán Ảnh Lên Sổ
-                                    </button>
+                                    {/* Tool 2: Sticker */}
+                                    <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
+                                        <label className="text-xs text-stone-400 font-bold mb-2 block">2. Dán Sticker</label>
+                                        <div className="grid grid-cols-4 gap-2 max-h-36 overflow-y-auto sticker-scroll pr-1">
+                                            {Object.keys(STICKER_TEMPLATES).map(key => (
+                                                <button key={key} onClick={() => handleAddSticker(key)} className="bg-stone-900 hover:bg-amber-900/50 border border-stone-700 p-2 rounded-xl flex flex-col items-center justify-center gap-1 transition">
+                                                    <img src={STICKER_TEMPLATES[key].content} className="w-8 h-8 object-contain drop-shadow-md opacity-90" />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Tool 3 */}
+                                    <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
+                                        <label className="text-xs text-stone-400 font-bold mb-2 block">3. Kẹp Ảnh Kỷ Niệm</label>
+                                        <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
+                                        <button onClick={() => fileInputRef.current.click()} className="w-full bg-stone-900 hover:bg-stone-700 text-amber-200 border border-stone-600 border-dashed text-xs py-4 rounded-xl flex items-center justify-center gap-2 transition">
+                                            <i className="fa-solid fa-camera"></i> Chọn & Dán Ảnh Lên Sổ
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </section>
 
                         {/* CỘT PHẢI: CUỐN SỔ BÌA CỨNG 3D */}
                         <section className="md:col-span-8 perspective-2000 relative">
-                            {isBookOpen && (
+                            {isBookOpen ? (
                                 <button onClick={() => setIsBookOpen(false)} className="absolute -top-4 right-8 z-50 bg-stone-800 text-amber-200 px-5 py-2 rounded-b-2xl shadow-xl hover:bg-stone-700 hover:text-amber-100 transition-all font-bold text-sm border-x border-b border-stone-600">
                                     <i className="fa-solid fa-book-journal-whills"></i> Gập sổ lại
                                 </button>
-                            )}
+                            ) : null}
 
-                            <div className="relative w-full max-w-[650px] mx-auto h-full min-h-[700px] mt-2">
-                                {/* BÌA SỔ (COVER) - Đã được fix lỗi hiển thị, cover sẽ mờ dần khi mở ra */}
+                            <div className="relative w-full max-w-[650px] mx-auto h-full min-h-[500px] md:min-h-[700px] mt-2">
+                                {/* BÌA SỔ (COVER) */}
                                 <div 
                                     className={`book-cover absolute inset-0 w-full h-full shadow-[20px_0_30px_rgba(0,0,0,0.5)] rounded-r-3xl border-l-[16px] border-[#1a0f0a] ${isBookOpen ? 'is-open' : 'cursor-pointer hover:scale-[1.02]'}`}
                                     onClick={() => !isBookOpen && setIsBookOpen(true)}
@@ -741,15 +762,15 @@
                                             <div className="absolute top-4 left-4 right-4 bottom-4 border border-amber-500/20 rounded-xl pointer-events-none"></div>
                                             
                                             <div className="bg-amber-100/10 p-5 rounded-full mb-6 shadow-lg border border-amber-500/30">
-                                                <i className="fa-solid fa-graduation-cap text-7xl text-amber-400 drop-shadow-lg"></i>
+                                                <i className="fa-solid fa-graduation-cap text-5xl md:text-7xl text-amber-400 drop-shadow-lg"></i>
                                             </div>
                                             
-                                            <h1 className="text-5xl text-center font-bold font-serif-title text-amber-100 tracking-widest drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] leading-tight">
+                                            <h1 className="text-4xl md:text-5xl text-center font-bold font-serif-title text-amber-100 tracking-widest drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] leading-tight">
                                                 KỶ NIỆM<br/>PHƯỢNG VĨ
                                             </h1>
                                             
-                                            <div className="mt-12 bg-amber-900/60 px-6 py-2 rounded-full border border-amber-700/50">
-                                                <p className="text-amber-200 font-handwriting text-2xl animate-pulse flex items-center gap-2">
+                                            <div className="mt-8 md:mt-12 bg-amber-900/60 px-6 py-2 rounded-full border border-amber-700/50">
+                                                <p className="text-amber-200 font-handwriting text-xl md:text-2xl animate-pulse flex items-center gap-2">
                                                     Nhấn để mở sổ <i className="fa-solid fa-hand-pointer"></i>
                                                 </p>
                                             </div>
@@ -773,7 +794,7 @@
                                         <div 
                                             key={pageFlipKey} 
                                             ref={notebookRef}
-                                            className={`notebook-paper w-full h-full min-h-[660px] rounded-r-2xl shadow-inner relative overflow-hidden ${animState}`}
+                                            className={`notebook-paper w-full h-full min-h-[500px] md:min-h-[660px] rounded-r-2xl shadow-inner relative overflow-hidden ${animState}`}
                                         >
                                             {!currentPage ? (
                                                 <div className="absolute inset-0 flex flex-col items-center justify-center opacity-70 px-4 text-center">
@@ -784,30 +805,30 @@
                                                 <>
                                                     <div className="absolute top-4 left-12 right-6 border-b border-dashed border-stone-400 pb-2">
                                                         <span className="text-xs text-stone-500 font-bold uppercase">Người viết: </span>
-                                                        <span className="text-xl font-bold font-serif-title text-amber-900 ml-2">{currentPage.author}</span>
+                                                        <span className="text-lg md:text-xl font-bold font-serif-title text-amber-900 ml-2">{currentPage.author}</span>
                                                         <span className="float-right text-[10px] text-stone-400 mt-2">
                                                             {formatDate(currentPage.createdAt)}
                                                         </span>
                                                     </div>
 
-                                                    {currentPage.items?.map((item) => {
-                                                        const isSelected = selectedItemId === item.id;
+                                                    {(currentPage.items || []).map((item) => {
+                                                        const isSelected = selectedItemId && selectedItemId === item.id;
                                                         return (
                                                             <div 
                                                                 key={item.id}
                                                                 onPointerDown={(e) => handlePointerDown(e, item)}
-                                                                className={`absolute ${isUnlocked ? 'cursor-grab' : 'cursor-default'} ${draggingItem?.id === item.id ? 'opacity-80' : ''} touch-none select-none`}
+                                                                className={`absolute ${isUnlocked ? 'cursor-grab' : 'cursor-default'} ${draggingItem && draggingItem.id === item.id ? 'opacity-80' : ''} touch-none select-none`}
                                                                 style={{
-                                                                    left: `${item.x}%`, top: `${item.y}%`,
+                                                                    left: `${item.x || 50}%`, top: `${item.y || 50}%`,
                                                                     transform: `translate(-50%, -50%)`,
                                                                     zIndex: isSelected ? 30 : 10
                                                                 }}
                                                             >
                                                                 <div 
                                                                     className={`relative transition-transform duration-100 ${isSelected && isUnlocked ? 'ring-2 ring-dashed ring-amber-500 bg-white/40 p-2 rounded-lg' : ''}`}
-                                                                    style={{ transform: `scale(${item.scale}) rotate(${item.rotate}deg)` }}
+                                                                    style={{ transform: `scale(${item.scale || 1}) rotate(${item.rotate || 0}deg)` }}
                                                                 >
-                                                                    {isSelected && isUnlocked && (
+                                                                    {isSelected && isUnlocked ? (
                                                                         <>
                                                                             {/* NÚT HOÀN THÀNH */}
                                                                             <button 
@@ -849,25 +870,25 @@
                                                                                 <i className="fa-solid fa-rotate-right text-xs"></i>
                                                                             </button>
                                                                         </>
-                                                                    )}
+                                                                    ) : null}
 
                                                                     {/* NỘI DUNG CHÍNH */}
                                                                     <div className="pointer-events-none">
-                                                                        {item.type === 'text' && <div className={`whitespace-nowrap text-xl font-semibold ${getTextColorClass(item.color)} ${item.font}`}>{item.content}</div>}
-                                                                        {item.type === 'sticker' && <img src={item.content} className="w-16 h-16 object-contain drop-shadow-sm" draggable="false" />}
-                                                                        {item.type === 'image' && <div className="p-2 bg-white shadow-md border border-stone-200 rotate-1 max-w-[200px]"><img src={item.content} className="w-full h-auto" draggable="false" /></div>}
+                                                                        {item.type === 'text' ? <div className={`whitespace-nowrap text-xl font-semibold ${getTextColorClass(item.color)} ${item.font}`}>{item.content}</div> : null}
+                                                                        {item.type === 'sticker' ? <img src={item.content} className="w-16 h-16 object-contain drop-shadow-sm" draggable="false" /> : null}
+                                                                        {item.type === 'image' ? <div className="p-2 bg-white shadow-md border border-stone-200 rotate-1 max-w-[200px]"><img src={item.content} className="w-full h-auto" draggable="false" /></div> : null}
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                         );
                                                     })}
                                                     
-                                                    {currentPage.items?.length === 0 && (
+                                                    {(currentPage.items || []).length === 0 ? (
                                                         <div className="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none">
                                                             <i className="fa-solid fa-pen-nib text-5xl mb-4 text-stone-500"></i>
                                                             <p className="font-handwriting text-2xl text-stone-600">Trang giấy trắng tinh...</p>
                                                         </div>
-                                                    )}
+                                                    ) : null}
                                                 </>
                                             )}
                                         </div>
@@ -877,15 +898,15 @@
                         </section>
                     </main>
 
-                    {toast && (
+                    {toast ? (
                         <div className="fixed bottom-5 right-5 bg-stone-900 text-amber-200 px-5 py-3 rounded-xl shadow-2xl border border-amber-500/50 z-[120] flex items-center gap-3 animate-bounce">
                             <i className="fa-solid fa-bell text-amber-500"></i>
                             <span className="text-sm font-bold">{toast}</span>
                         </div>
-                    )}
+                    ) : null}
 
                     {/* MODAL: TÌM KIẾM TRANG SỔ (Z-index cao nhất) */}
-                    {showSearchModal && (
+                    {showSearchModal ? (
                         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex justify-center items-start pt-20 p-4">
                             <div className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-md shadow-2xl">
                                 <div className="flex justify-between items-center border-b border-stone-800 pb-3 mb-4">
@@ -906,37 +927,41 @@
                                 />
                                 <div className="max-h-64 overflow-y-auto sticker-scroll pr-2 space-y-2">
                                     {pages.map((p, idx) => {
-                                        const matchAuthor = p.author && p.author.toLowerCase().includes(searchQuery.toLowerCase());
-                                        const matchFull = p.fullName && p.fullName.toLowerCase().includes(searchQuery.toLowerCase());
+                                        const matchAuthor = p.author && typeof p.author === 'string' && p.author.toLowerCase().includes(searchQuery.toLowerCase());
+                                        const matchFull = p.fullName && typeof p.fullName === 'string' && p.fullName.toLowerCase().includes(searchQuery.toLowerCase());
                                         
                                         if (!matchAuthor && !matchFull) return null;
                                         
                                         return (
                                             <button 
-                                                key={p.id}
+                                                key={p.id || idx}
                                                 onClick={() => jumpToPage(idx)}
                                                 className="w-full text-left px-4 py-3 bg-stone-800 hover:bg-amber-900/50 border border-stone-700 hover:border-amber-700/50 rounded-xl transition flex justify-between items-center"
                                             >
                                                 <div>
                                                     <div className="text-amber-100 font-bold">{p.author}</div>
-                                                    {p.fullName && p.fullName !== p.author && (
+                                                    {p.fullName && p.fullName !== p.author ? (
                                                         <div className="text-[10px] text-stone-400">{p.fullName}</div>
-                                                    )}
+                                                    ) : null}
                                                 </div>
                                                 <span className="text-xs text-amber-500/70 font-semibold bg-amber-900/30 px-2 py-1 rounded">Trang {idx + 1}</span>
                                             </button>
                                         );
                                     })}
-                                    {pages.filter(p => (p.author && p.author.toLowerCase().includes(searchQuery.toLowerCase())) || (p.fullName && p.fullName.toLowerCase().includes(searchQuery.toLowerCase()))).length === 0 && (
+                                    {pages.filter(p => {
+                                        const matchAuthor = p.author && typeof p.author === 'string' && p.author.toLowerCase().includes(searchQuery.toLowerCase());
+                                        const matchFull = p.fullName && typeof p.fullName === 'string' && p.fullName.toLowerCase().includes(searchQuery.toLowerCase());
+                                        return matchAuthor || matchFull;
+                                    }).length === 0 ? (
                                         <div className="text-center text-stone-500 py-4 text-sm">Không tìm thấy bạn nào phù hợp.</div>
-                                    )}
+                                    ) : null}
                                 </div>
                             </div>
                         </div>
-                    )}
+                    ) : null}
 
                     {/* MODAL 1: TẠO TRANG */}
-                    {showCreateModal && (
+                    {showCreateModal ? (
                         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
                             <form autoComplete="off" onSubmit={handleCreatePage} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
                                 <h3 className="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">📖 Tạo Trang Sách Của Bạn</h3>
@@ -956,10 +981,10 @@
                                 </div>
                             </form>
                         </div>
-                    )}
+                    ) : null}
 
                     {/* MODAL 2: MỞ KHÓA TRANG */}
-                    {showUnlockModal && (
+                    {showUnlockModal ? (
                         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
                             <form autoComplete="off" onSubmit={handleUnlock} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
                                 <h3 className="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">🔑 Mở Khóa Chỉnh Sửa</h3>
@@ -979,10 +1004,10 @@
                                 </div>
                             </form>
                         </div>
-                    )}
+                    ) : null}
 
                     {/* MODAL 3: ĐỔI MẬT KHẨU LẦN ĐẦU */}
-                    {showChangePassModal && (
+                    {showChangePassModal ? (
                         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
                             <form autoComplete="off" onSubmit={handleChangePassword} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
                                 <h3 className="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">🔐 Đổi Mật Khẩu Lần Đầu</h3>
@@ -1002,10 +1027,10 @@
                                 </div>
                             </form>
                         </div>
-                    )}
+                    ) : null}
 
                     {/* MODAL 4: ADMIN QUẢN TRỊ VIÊN */}
-                    {showAdminModal && (
+                    {showAdminModal ? (
                         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
                             <form autoComplete="off" onSubmit={handleAdminLogin} className="bg-stone-900 border border-fuchsia-800/50 p-6 rounded-3xl w-full max-w-sm shadow-[0_0_40px_rgba(162,28,175,0.3)]">
                                 <h3 className="text-lg font-bold text-fuchsia-400 border-b border-stone-800 pb-3 mb-4 flex items-center gap-2">
@@ -1044,13 +1069,16 @@
                                 </div>
                             </form>
                         </div>
-                    )}
+                    ) : null}
                 </div>
             );
         }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        const rootElement = document.getElementById('root');
+        if (rootElement) {
+            const root = ReactDOM.createRoot(rootElement);
+            root.render(<App />);
+        }
     </script>
 </body>
 </html>
