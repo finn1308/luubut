@@ -100,7 +100,6 @@
             daisy: { name: "Cúc Họa Mi", icon: "🌼", content: "https://cdn-icons-png.flaticon.com/512/1087/1087340.png" }
         };
 
-        // Hàm hỗ trợ format hiển thị thời gian
         const formatDate = (timestamp) => {
             if (!timestamp) return 'Mới đây';
             if (typeof timestamp === 'number') return new Date(timestamp).toLocaleDateString('vi-VN');
@@ -109,48 +108,54 @@
         };
 
         function App() {
-            // State dữ liệu trang
             const [pages, setPages] = useState([]);
             const [currentPageIdx, setCurrentPageIdx] = useState(0);
-            const [pageFlipKey, setPageFlipKey] = useState(0); // Trigger animation lật trang
+            const [pageFlipKey, setPageFlipKey] = useState(0); 
+            const [editUnlocked, setEditUnlocked] = useState({}); 
             
-            // State bảo mật
-            const [editUnlocked, setEditUnlocked] = useState({}); // { pageId: boolean }
-            
-            // State công cụ (Toolbox)
             const [textInput, setTextInput] = useState('');
             const [inkColor, setInkColor] = useState('violet');
             const [fontSize, setFontSize] = useState('font-handwriting');
             
-            // State thao tác kéo thả, chọn phần tử
             const [selectedItemId, setSelectedItemId] = useState(null);
             const [draggingItem, setDraggingItem] = useState(null);
 
-            // Modals
             const [showCreateModal, setShowCreateModal] = useState(false);
             const [showUnlockModal, setShowUnlockModal] = useState(false);
             const [unlockInput, setUnlockInput] = useState('');
             const [toast, setToast] = useState('');
+            
+            // Thông báo lỗi rõ ràng nếu Firebase bị chặn
+            const [criticalError, setCriticalError] = useState('');
 
             const notebookRef = useRef(null);
             const fileInputRef = useRef(null);
 
-            // Hàm hiện thông báo góc màn hình
             const showToast = (msg) => {
                 setToast(msg);
                 setTimeout(() => setToast(''), 4000);
             };
 
+            // Kiểm tra môi trường file:// để cảnh báo
+            useEffect(() => {
+                if (window.location.protocol === 'file:') {
+                    alert("CẢNH BÁO: Bạn đang mở trực tiếp bằng đường dẫn file://. Cơ sở dữ liệu Firebase có thể sẽ từ chối hoạt động. Để sử dụng tốt nhất, hãy đưa lên mạng (Vercel) hoặc mở qua Local Server nhé!");
+                }
+            }, []);
+
             // ==========================================
             // LẮNG NGHE DỮ LIỆU REALTIME TỪ FIREBASE
             // ==========================================
             useEffect(() => {
-                if (!db) return;
+                if (!db) {
+                    setCriticalError("Không thể khởi tạo Firebase. Vui lòng kiểm tra lại cấu hình kết nối.");
+                    return;
+                }
                 
-                // Trỏ thẳng vào collection "pages" ở root (tạo mới nếu chưa có)
                 const pagesRef = db.collection('pages');
                 
                 const unsubscribe = pagesRef.orderBy('createdAt', 'asc').onSnapshot(snapshot => {
+                    setCriticalError(''); // Reset lỗi nếu thành công
                     const loadedPages = snapshot.docs.map(doc => ({
                         id: doc.id,
                         ...doc.data()
@@ -162,13 +167,15 @@
                             author: "Tập Thể Lớp Chúng Mình",
                             password: "",
                             items: [],
-                            createdAt: Date.now() // Sử dụng Date.now() thay cho serverTimestamp để ko bị lỗi tải lại
+                            createdAt: Date.now() 
                         }).catch(err => {
                             console.error("Lỗi tạo trang bìa:", err);
+                            if (err.message.includes("permission")) {
+                                setCriticalError("Bạn chưa đổi tab 'Rules' trong Firebase thành 'true'. Hãy vào Firebase sửa ngay để cuốn sổ hiện ra nhé!");
+                            }
                         });
                     } else {
                         setPages(loadedPages);
-                        // Đảm bảo không bị lỗi index khi có người xóa trang
                         if (currentPageIdx >= loadedPages.length) {
                             setCurrentPageIdx(Math.max(0, loadedPages.length - 1));
                         }
@@ -176,9 +183,9 @@
                 }, error => {
                     console.error("Lỗi tải dữ liệu:", error);
                     if (error.message.includes("Missing or insufficient permissions")) {
-                        alert("⚠️ LỖI QUYỀN TRUY CẬP (FIREBASE RULES) ⚠️\n\nBạn chưa cấp quyền Đọc/Ghi trên Firebase. Dữ liệu sẽ không được lưu!\n\nHướng dẫn sửa:\n1. Vào Firebase Console -> Firestore Database\n2. Chọn tab 'Rules' (Quy tắc)\n3. Đổi chữ 'false' thành 'true' (allow read, write: if true;)\n4. Bấm Publish và F5 lại trang này.");
+                        setCriticalError("🔥 LỖI QUYỀN TRUY CẬP: Bạn chưa bật Quyền Đọc/Ghi trên Firebase (Rules). Hãy vào mục Firestore Database -> Rules -> Sửa 'false' thành 'true' và Publish!");
                     } else {
-                        showToast("Mất kết nối mạng! Vui lòng thử lại.");
+                        setCriticalError("Mất kết nối mạng hoặc sai ID dự án Firebase!");
                     }
                 });
 
@@ -189,7 +196,7 @@
             const isUnlocked = currentPage ? editUnlocked[currentPage.id] : false;
 
             // ==========================================
-            // XỬ LÝ CHUYỂN TRANG 3D
+            // CÁC HÀM XỬ LÝ (TẠO TRANG, THÊM ITEM, KÉO THẢ)
             // ==========================================
             const turnPage = (direction) => {
                 if (direction === 'next' && currentPageIdx < pages.length - 1) {
@@ -203,9 +210,6 @@
                 }
             };
 
-            // ==========================================
-            // TẠO TRANG & BẢO MẬT
-            // ==========================================
             const handleCreatePage = async (e) => {
                 e.preventDefault();
                 const author = e.target.author.value.trim();
@@ -224,16 +228,15 @@
                     setShowCreateModal(false);
                     showToast(`Đã lưu trang riêng cho ${author} vĩnh viễn!`);
                     
-                    // Chuyển đến trang cuối (trang vừa tạo)
                     setTimeout(() => {
                         setCurrentPageIdx(pages.length);
                         setPageFlipKey(prev => prev + 1);
                     }, 500);
 
                 } catch (error) {
-                    console.error("Lỗi khi tạo trang:", error);
                     if (error.message.includes("permission")) {
-                        alert("❌ KHÔNG THỂ LƯU! Bạn chưa bật quyền Ghi (Rules) trong Firebase.\nHãy sửa Rules thành 'true' rồi thử lại nhé!");
+                        setCriticalError("KHÔNG THỂ TẠO TRANG! Bạn chưa cấp quyền Ghi (Rules) trong Firebase.");
+                        setShowCreateModal(false);
                     } else {
                         showToast("Lỗi khi tạo trang. Vui lòng thử lại.");
                     }
@@ -244,7 +247,6 @@
                 e.preventDefault();
                 if (!currentPage) return;
                 
-                // Mật khẩu đúng hoặc trang không có mật khẩu (trang bìa)
                 if (unlockInput === currentPage.password || currentPage.password === "") {
                     setEditUnlocked(prev => ({ ...prev, [currentPage.id]: true }));
                     setShowUnlockModal(false);
@@ -255,9 +257,6 @@
                 }
             };
 
-            // ==========================================
-            // THÊM ITEM VÀO TRANG (Chữ, Ảnh, Sticker)
-            // ==========================================
             const addItemToPage = async (newItem) => {
                 if (!isUnlocked || !currentPage) {
                     showToast("Cần mở khóa trang để dán!");
@@ -267,9 +266,8 @@
                 try {
                     await db.collection('pages').doc(currentPage.id).update({ items: updatedItems });
                 } catch (error) {
-                    console.error("Lỗi lưu item:", error);
                     if (error.message.includes("permission")) {
-                        alert("❌ KHÔNG THỂ LƯU! Bạn chưa bật quyền Ghi (Rules) trong Firebase.");
+                        setCriticalError("LỖI CHẶN LƯU DỮ LIỆU! Hãy vào Firebase bật quyền Rules = true.");
                     } else {
                         showToast("Lỗi khi dán lên trang.");
                     }
@@ -285,10 +283,8 @@
                     content: textInput,
                     color: inkColor,
                     font: fontSize,
-                    x: 20, // Tọa độ X % mặc định
-                    y: 20, // Tọa độ Y % mặc định
-                    scale: 1,
-                    rotate: 0
+                    x: 20, y: 20,
+                    scale: 1, rotate: 0
                 });
                 setTextInput('');
             };
@@ -299,15 +295,13 @@
                     type: 'sticker',
                     content: STICKER_TEMPLATES[stickerKey].content,
                     x: 50, y: 50,
-                    scale: 1, rotate: (Math.random() * 30) - 15 // Ngẫu nhiên xoay nhẹ
+                    scale: 1, rotate: (Math.random() * 30) - 15 
                 });
             };
 
-            // Xử lý nén ảnh ra Base64 để lưu thẳng vào Firestore (Giới hạn 1MB/Document)
             const handleImageUpload = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-
                 if (!isUnlocked) {
                     showToast("Vui lòng mở khóa trang trước khi tải ảnh lên!");
                     return;
@@ -317,7 +311,6 @@
                 reader.onload = (event) => {
                     const img = new Image();
                     img.onload = () => {
-                        // Vẽ ra Canvas để thu nhỏ kích thước (chống tràn dung lượng Firestore)
                         const canvas = document.createElement('canvas');
                         const MAX_WIDTH = 300;
                         const scaleSize = MAX_WIDTH / img.width;
@@ -327,7 +320,6 @@
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                         
-                        // Xuất ra Base64 chất lượng 70%
                         const base64Image = canvas.toDataURL('image/jpeg', 0.7);
                         
                         addItemToPage({
@@ -343,12 +335,7 @@
                 };
                 reader.readAsDataURL(file);
             };
-
-            // ==========================================
-            // KÉO THẢ & CHỈNH SỬA (Scale, Rotate, Delete)
-            // ==========================================
             
-            // Xóa item
             const deleteItem = async (itemId) => {
                 if (!isUnlocked) return;
                 const updatedItems = currentPage.items.filter(i => i.id !== itemId);
@@ -356,7 +343,6 @@
                 setSelectedItemId(null);
             };
 
-            // Cập nhật thông số (Scale/Rotate)
             const updateItemTransform = async (itemId, type, direction) => {
                 if (!isUnlocked) return;
                 const items = [...currentPage.items];
@@ -369,20 +355,15 @@
                     items[index].rotate = (items[index].rotate + (direction * 15)) % 360;
                 }
                 
-                // Lưu cập nhật tạm thời ở local để UI mượt, sau đó đẩy lên mạng
                 await db.collection('pages').doc(currentPage.id).update({ items });
             };
 
-            // Kéo thả bằng chuột/cảm ứng
             const handlePointerDown = (e, item) => {
                 if (!isUnlocked) return;
                 e.stopPropagation();
                 setSelectedItemId(item.id);
 
                 const rect = e.target.getBoundingClientRect();
-                const notebookRect = notebookRef.current.getBoundingClientRect();
-                
-                // Tính khoảng cách từ điểm click đến tâm của phần tử
                 setDraggingItem({
                     id: item.id,
                     offsetX: e.clientX - rect.left - rect.width/2,
@@ -395,24 +376,19 @@
                 
                 const notebookRect = notebookRef.current.getBoundingClientRect();
                 
-                // Tính % tọa độ X, Y mới
                 let newX = ((e.clientX - notebookRect.left - draggingItem.offsetX) / notebookRect.width) * 100;
                 let newY = ((e.clientY - notebookRect.top - draggingItem.offsetY) / notebookRect.height) * 100;
                 
-                // Giới hạn không cho kéo ra ngoài sổ
                 newX = Math.max(5, Math.min(95, newX));
                 newY = Math.max(5, Math.min(95, newY));
 
-                // Snap vào dòng kẻ ngang (24px/dòng) nếu là Text
                 const targetItem = currentPage.items.find(i => i.id === draggingItem.id);
                 if (targetItem && targetItem.type === 'text') {
-                    // Dòng kẻ đầu tiên bắt đầu khoảng 60px từ trên xuống
                     const yPx = (newY / 100) * notebookRect.height;
                     const snappedYPx = Math.round((yPx - 60) / 24) * 24 + 60;
                     newY = (snappedYPx / notebookRect.height) * 100;
                 }
 
-                // Cập nhật State nội bộ để kéo mượt
                 const updatedPages = [...pages];
                 const pageIdx = updatedPages.findIndex(p => p.id === currentPage.id);
                 const itemIdx = updatedPages[pageIdx].items.findIndex(i => i.id === draggingItem.id);
@@ -425,7 +401,6 @@
             const handlePointerUp = async () => {
                 if (!draggingItem || !isUnlocked) return;
                 
-                // Lấy tọa độ cuối cùng và lưu lên DB
                 const finalItem = currentPage.items.find(i => i.id === draggingItem.id);
                 if (finalItem) {
                     try {
@@ -433,16 +408,12 @@
                             items: currentPage.items
                         });
                     } catch(err) {
-                        console.error("Lỗi kéo thả cập nhật lên cloud:", err);
-                        if(err.message.includes("permission")) {
-                             alert("Lỗi: Quá trình lưu di chuyển bị chặn do Firebase Rules.");
-                        }
+                        console.error("Lỗi cập nhật tọa độ:", err);
                     }
                 }
                 setDraggingItem(null);
             };
 
-            // Hàm chuyển đổi class màu chữ
             const getTextColorClass = (color) => {
                 switch(color) {
                     case 'blue': return 'text-sky-800';
@@ -453,116 +424,273 @@
             };
 
             return (
-                <div class="min-h-screen flex flex-col font-sans">
+                <div className="min-h-screen flex flex-col font-sans">
                     
+                    {/* BẢNG LỖI CẢNH BÁO QUAN TRỌNG NẾU FIREBASE BỊ CHẶN */}
+                    {criticalError && (
+                        <div className="fixed top-16 left-1/2 -translate-x-1/2 w-[90%] max-w-lg bg-rose-600 text-white px-6 py-4 rounded-2xl shadow-2xl z-[100] font-bold text-center animate-bounce border-4 border-rose-800">
+                            <i className="fa-solid fa-triangle-exclamation text-3xl mb-2"></i>
+                            <p>{criticalError}</p>
+                            <div className="mt-3 bg-white text-rose-800 text-xs p-3 rounded-xl text-left">
+                                <p className="font-bold mb-1">CÁCH KHẮC PHỤC TRONG 30 GIÂY:</p>
+                                <ol className="list-decimal list-inside font-normal space-y-1">
+                                    <li>Mở tab Firebase Console nơi bạn vừa tạo Data.</li>
+                                    <li>Vào <b>Firestore Database</b> &gt; Bấm tab <b>Rules (Quy tắc)</b>.</li>
+                                    <li>Đổi chữ <b>false</b> thành <b>true</b>. Bấm <b>Publish</b>.</li>
+                                    <li>Quay lại đây và <b>F5 tải lại trang</b>.</li>
+                                </ol>
+                            </div>
+                        </div>
+                    )}
+
                     {/* NAV BAR */}
-                    <nav class="bg-rose-950 text-rose-100 px-4 py-3 shadow-lg flex flex-col md:flex-row justify-between items-center gap-4 z-40 sticky top-0 border-b-2 border-rose-800/50">
-                        <div class="flex items-center gap-3">
-                            <span class="text-3xl">🎒</span>
+                    <nav className="bg-rose-950 text-rose-100 px-4 py-3 shadow-lg flex flex-col md:flex-row justify-between items-center gap-4 z-40 sticky top-0 border-b-2 border-rose-800/50">
+                        <div className="flex items-center gap-3">
+                            <span className="text-3xl">🎒</span>
                             <div>
-                                <h1 class="text-xl font-bold font-serif-title text-amber-100 tracking-wider">KỶ NIỆM PHƯỢNG VĨ</h1>
-                                <p class="text-[10px] text-rose-300 uppercase tracking-widest">Lưu bút số hóa</p>
+                                <h1 className="text-xl font-bold font-serif-title text-amber-100 tracking-wider">KỶ NIỆM PHƯỢNG VĨ</h1>
+                                <p className="text-[10px] text-rose-300 uppercase tracking-widest">Lưu bút số hóa</p>
                             </div>
                         </div>
 
                         {/* Pagination */}
-                        <div class="flex items-center gap-4 bg-rose-900/60 px-4 py-2 rounded-full border border-rose-700/50">
-                            <button onClick={() => turnPage('prev')} disabled={currentPageIdx === 0} class="hover:text-amber-300 disabled:opacity-30 transition">
-                                <i class="fa-solid fa-chevron-left fa-lg"></i>
+                        <div className="flex items-center gap-4 bg-rose-900/60 px-4 py-2 rounded-full border border-rose-700/50">
+                            <button onClick={() => turnPage('prev')} disabled={currentPageIdx === 0 || !currentPage} className="hover:text-amber-300 disabled:opacity-30 transition">
+                                <i className="fa-solid fa-chevron-left fa-lg"></i>
                             </button>
-                            <div class="text-sm font-semibold min-w-[120px] text-center text-amber-200">
+                            <div className="text-sm font-semibold min-w-[120px] text-center text-amber-200">
                                 {currentPage ? currentPage.author : 'Đang tải...'}
-                                <span class="block text-[10px] text-rose-400 font-normal">
-                                    Trang {currentPageIdx + 1} / {pages.length}
+                                <span className="block text-[10px] text-rose-400 font-normal">
+                                    Trang {pages.length > 0 ? currentPageIdx + 1 : 0} / {pages.length}
                                 </span>
                             </div>
-                            <button onClick={() => turnPage('next')} disabled={currentPageIdx === pages.length - 1} class="hover:text-amber-300 disabled:opacity-30 transition">
-                                <i class="fa-solid fa-chevron-right fa-lg"></i>
+                            <button onClick={() => turnPage('next')} disabled={currentPageIdx === pages.length - 1 || !currentPage} className="hover:text-amber-300 disabled:opacity-30 transition">
+                                <i className="fa-solid fa-chevron-right fa-lg"></i>
                             </button>
                         </div>
 
-                        <div class="flex gap-2">
+                        <div className="flex gap-2">
                             {currentPage && (
                                 isUnlocked ? (
-                                    <button onClick={() => { setEditUnlocked(prev => ({...prev, [currentPage.id]: false})); setSelectedItemId(null); }} class="bg-emerald-600/20 text-emerald-400 border border-emerald-500/50 text-xs font-bold py-2 px-4 rounded-full flex items-center gap-2 hover:bg-emerald-600/40 transition">
-                                        <i class="fa-solid fa-lock-open"></i> Đang Mở Khóa
+                                    <button onClick={() => { setEditUnlocked(prev => ({...prev, [currentPage.id]: false})); setSelectedItemId(null); }} className="bg-emerald-600/20 text-emerald-400 border border-emerald-500/50 text-xs font-bold py-2 px-4 rounded-full flex items-center gap-2 hover:bg-emerald-600/40 transition">
+                                        <i className="fa-solid fa-lock-open"></i> Đang Mở Khóa
                                     </button>
                                 ) : (
-                                    <button onClick={() => setShowUnlockModal(true)} class="bg-stone-800/50 text-stone-300 border border-stone-600 text-xs font-bold py-2 px-4 rounded-full flex items-center gap-2 hover:bg-stone-700 transition">
-                                        <i class="fa-solid fa-lock"></i> Mở Khóa Sửa
+                                    <button onClick={() => setShowUnlockModal(true)} className="bg-stone-800/50 text-stone-300 border border-stone-600 text-xs font-bold py-2 px-4 rounded-full flex items-center gap-2 hover:bg-stone-700 transition">
+                                        <i className="fa-solid fa-lock"></i> Mở Khóa Sửa
                                     </button>
                                 )
                             )}
-                            <button onClick={() => setShowCreateModal(true)} class="bg-gradient-to-r from-amber-600 to-rose-600 text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg hover:scale-105 transition transform">
-                                <i class="fa-solid fa-plus"></i> Tạo Trang Mới
+                            <button onClick={() => setShowCreateModal(true)} className="bg-gradient-to-r from-amber-600 to-rose-600 text-white text-xs font-bold py-2 px-4 rounded-full shadow-lg hover:scale-105 transition transform">
+                                <i className="fa-solid fa-plus"></i> Tạo Trang Mới
                             </button>
                         </div>
                     </nav>
 
-                    <main class="flex-1 max-w-7xl w-full mx-auto p-4 grid grid-cols-1 md:grid-cols-12 gap-6 relative"
+                    <main className="flex-1 max-w-7xl w-full mx-auto p-4 grid grid-cols-1 md:grid-cols-12 gap-6 relative"
                           onPointerMove={handlePointerMove}
                           onPointerUp={handlePointerUp}
                           onPointerLeave={handlePointerUp}>
                         
                         {/* 1/3: KHAY DỤNG CỤ THIẾT KẾ */}
-                        <section class="md:col-span-4 bg-stone-900/60 p-5 rounded-[2rem] border border-stone-800 shadow-2xl backdrop-blur-md h-fit sticky top-24">
-                            <h2 class="text-xl font-bold text-amber-200 border-b border-stone-700 pb-3 mb-4">🎨 Khay Đồ Dùng</h2>
+                        <section className="md:col-span-4 bg-stone-900/60 p-5 rounded-[2rem] border border-stone-800 shadow-2xl backdrop-blur-md h-fit sticky top-24">
+                            <h2 className="text-xl font-bold text-amber-200 border-b border-stone-700 pb-3 mb-4">🎨 Khay Đồ Dùng</h2>
                             
-                            <div class={`space-y-5 ${!isUnlocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <div className={`space-y-5 ${!isUnlocked ? 'opacity-50 pointer-events-none' : ''}`}>
                                 {/* Tool 1: Viết chữ */}
-                                <div class="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
-                                    <label class="text-xs text-stone-400 font-bold mb-2 block">1. Viết lời chúc (Mực máy)</label>
-                                    <form onSubmit={handleAddText} class="flex flex-col gap-2">
-                                        <input type="text" value={textInput} onChange={e => setTextInput(e.target.value)} class="w-full bg-stone-950 border border-stone-700 rounded-xl px-3 py-2 text-sm text-stone-200 focus:ring-1 focus:ring-amber-500 outline-none" placeholder="Viết lên trang giấy..." />
-                                        <div class="flex justify-between items-center mt-2">
-                                            <div class="flex gap-2">
+                                <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
+                                    <label className="text-xs text-stone-400 font-bold mb-2 block">1. Viết lời chúc (Mực máy)</label>
+                                    <form onSubmit={handleAddText} className="flex flex-col gap-2">
+                                        <input type="text" value={textInput} onChange={e => setTextInput(e.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-3 py-2 text-sm text-stone-200 focus:ring-1 focus:ring-amber-500 outline-none" placeholder="Viết lên trang giấy..." />
+                                        <div className="flex justify-between items-center mt-2">
+                                            <div className="flex gap-2">
                                                 {['violet', 'blue', 'black', 'red'].map(c => (
-                                                    <button key={c} type="button" onClick={() => setInkColor(c)} class={`w-5 h-5 rounded-full ${c==='violet'?'bg-indigo-500':c==='blue'?'bg-sky-500':c==='red'?'bg-rose-500':'bg-stone-800'} ${inkColor===c ? 'border-2 border-white scale-110' : 'border border-transparent'}`}></button>
+                                                    <button key={c} type="button" onClick={() => setInkColor(c)} className={`w-5 h-5 rounded-full ${c==='violet'?'bg-indigo-500':c==='blue'?'bg-sky-500':c==='red'?'bg-rose-500':'bg-stone-800'} ${inkColor===c ? 'border-2 border-white scale-110' : 'border border-transparent'}`}></button>
                                                 ))}
                                             </div>
-                                            <div class="flex gap-1 text-[10px]">
-                                                <button type="button" onClick={() => setFontSize('font-handwriting')} class={`px-2 py-1 rounded ${fontSize==='font-handwriting'?'bg-stone-700 text-white':'text-stone-400'}`}>Bút Bi</button>
-                                                <button type="button" onClick={() => setFontSize('font-cursive')} class={`px-2 py-1 rounded ${fontSize==='font-cursive'?'bg-stone-700 text-white':'text-stone-400'}`}>Lá Tre</button>
+                                            <div className="flex gap-1 text-[10px]">
+                                                <button type="button" onClick={() => setFontSize('font-handwriting')} className={`px-2 py-1 rounded ${fontSize==='font-handwriting'?'bg-stone-700 text-white':'text-stone-400'}`}>Bút Bi</button>
+                                                <button type="button" onClick={() => setFontSize('font-cursive')} className={`px-2 py-1 rounded ${fontSize==='font-cursive'?'bg-stone-700 text-white':'text-stone-400'}`}>Lá Tre</button>
                                             </div>
                                         </div>
-                                        <button type="submit" class="mt-2 bg-stone-700 hover:bg-stone-600 text-white text-xs py-2 rounded-lg font-bold">Dán Chữ Lên Vở</button>
+                                        <button type="submit" className="mt-2 bg-stone-700 hover:bg-stone-600 text-white text-xs py-2 rounded-lg font-bold">Dán Chữ Lên Vở</button>
                                     </form>
                                 </div>
 
                                 {/* Tool 2: Nhãn dán */}
-                                <div class="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
-                                    <label class="text-xs text-stone-400 font-bold mb-2 block">2. Dán Sticker</label>
-                                    <div class="grid grid-cols-4 gap-2">
+                                <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
+                                    <label className="text-xs text-stone-400 font-bold mb-2 block">2. Dán Sticker</label>
+                                    <div className="grid grid-cols-4 gap-2">
                                         {Object.keys(STICKER_TEMPLATES).map(key => (
-                                            <button key={key} onClick={() => handleAddSticker(key)} class="bg-stone-900 hover:bg-amber-900/50 border border-stone-700 p-2 rounded-xl flex flex-col items-center justify-center gap-1 transition">
-                                                <img src={STICKER_TEMPLATES[key].content} class="w-8 h-8 object-contain drop-shadow-md opacity-90" />
+                                            <button key={key} onClick={() => handleAddSticker(key)} className="bg-stone-900 hover:bg-amber-900/50 border border-stone-700 p-2 rounded-xl flex flex-col items-center justify-center gap-1 transition">
+                                                <img src={STICKER_TEMPLATES[key].content} className="w-8 h-8 object-contain drop-shadow-md opacity-90" />
                                             </button>
                                         ))}
                                     </div>
                                 </div>
 
                                 {/* Tool 3: Upload Ảnh */}
-                                <div class="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
-                                    <label class="text-xs text-stone-400 font-bold mb-2 block">3. Kẹp Ảnh Kỷ Niệm</label>
-                                    <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} class="hidden" />
-                                    <button onClick={() => fileInputRef.current.click()} class="w-full bg-stone-900 hover:bg-stone-700 text-amber-200 border border-stone-600 border-dashed text-xs py-4 rounded-xl flex items-center justify-center gap-2 transition">
-                                        <i class="fa-solid fa-camera"></i> Tải ảnh từ máy lên
+                                <div className="bg-stone-800/80 p-4 rounded-2xl border border-stone-700">
+                                    <label className="text-xs text-stone-400 font-bold mb-2 block">3. Kẹp Ảnh Kỷ Niệm</label>
+                                    <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
+                                    <button onClick={() => fileInputRef.current.click()} className="w-full bg-stone-900 hover:bg-stone-700 text-amber-200 border border-stone-600 border-dashed text-xs py-4 rounded-xl flex items-center justify-center gap-2 transition">
+                                        <i className="fa-solid fa-camera"></i> Tải ảnh từ máy lên
                                     </button>
-                                    <p class="text-[9px] text-stone-500 mt-2 text-center">*Hỗ trợ ảnh tự động thu nhỏ để dán lên vở.</p>
+                                    <p className="text-[9px] text-stone-500 mt-2 text-center">*Hỗ trợ ảnh tự động thu nhỏ để dán lên vở.</p>
                                 </div>
                             </div>
 
-                            {!isUnlocked && (
-                                <div class="mt-4 p-3 bg-rose-900/20 border border-rose-900/50 rounded-xl text-xs text-rose-300 text-center">
-                                    <i class="fa-solid fa-lock"></i> Hãy nhập mật mã ở thanh phía trên để sử dụng các công cụ này.
+                            {!isUnlocked && currentPage && (
+                                <div className="mt-4 p-3 bg-rose-900/20 border border-rose-900/50 rounded-xl text-xs text-rose-300 text-center">
+                                    <i className="fa-solid fa-lock"></i> Hãy nhập mật mã ở thanh phía trên để mở khóa sửa đổi nhé.
                                 </div>
                             )}
                         </section>
 
                         {/* 2/3: CUỐN SỔ LƯU BÚT 3D */}
-                        <section class="md:col-span-8 perspective-1000">
-                            {/* Bìa sổ da */}
-                            <div class="bg-[#4a3525] p-3 md:p-5 rounded-[2rem] shadow-2xl border-[6px] border-[#2d1b13] relative overflow-hidden h-full min-h-[700px] flex">
+                        <section className="md:col-span-8 perspective-1000">
+                            <div className="bg-[#4a3525] p-3 md:p-5 rounded-[2rem] shadow-2xl border-[6px] border-[#2d1b13] relative overflow-hidden h-full min-h-[700px] flex">
                                 
-                                {/* Gáy sách lò xo ảo */}
-                                <div class="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-stone-950 via-stone
+                                <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-stone-950 via-stone-800 to-transparent z-20 border-r border-black/30"></div>
+                                
+                                <div className="w-full h-full relative pl-6">
+                                    {/* Thay vì ẩn đi khi currentPage bị undefined, ta Render Bìa Chờ hoặc Sổ */}
+                                    <div 
+                                        key={pageFlipKey} 
+                                        ref={notebookRef}
+                                        className="notebook-paper w-full h-full min-h-[660px] rounded-r-2xl shadow-inner relative overflow-hidden page-turn-enter"
+                                        onClick={() => setSelectedItemId(null)}
+                                    >
+                                        {!currentPage ? (
+                                            // Giao diện khi trống/Đang tải dữ liệu
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center opacity-70 px-4 text-center">
+                                                <i className="fa-solid fa-hourglass-half fa-spin text-5xl mb-4 text-amber-800"></i>
+                                                <p className="font-handwriting text-3xl text-stone-700 mb-2">Đang kết nối đến lớp học...</p>
+                                                <p className="text-sm font-sans text-stone-500 max-w-sm">
+                                                    Nếu đợi quá lâu, vui lòng kiểm tra lại <b>Rules Firebase</b> của bạn đã được bật <b>true</b> chưa nhé!
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            // Giao diện khi có trang
+                                            <>
+                                                <div className="absolute top-4 left-12 right-6 border-b border-dashed border-stone-400 pb-2">
+                                                    <span className="text-xs text-stone-500 font-bold uppercase">Người viết: </span>
+                                                    <span className="text-xl font-bold font-serif-title text-amber-900 ml-2">{currentPage.author}</span>
+                                                    <span className="float-right text-[10px] text-stone-400 mt-2">
+                                                        {formatDate(currentPage.createdAt)}
+                                                    </span>
+                                                </div>
+
+                                                {currentPage.items?.map((item) => {
+                                                    const isSelected = selectedItemId === item.id;
+                                                    return (
+                                                        <div 
+                                                            key={item.id}
+                                                            onPointerDown={(e) => handlePointerDown(e, item)}
+                                                            className={`absolute cursor-${isUnlocked ? 'grab' : 'default'} ${draggingItem?.id === item.id ? 'cursor-grabbing opacity-80 scale-105' : ''} transition-transform duration-100 touch-none`}
+                                                            style={{
+                                                                left: `${item.x}%`,
+                                                                top: `${item.y}%`,
+                                                                transform: `translate(-50%, -50%) scale(${item.scale}) rotate(${item.rotate}deg)`,
+                                                                zIndex: isSelected ? 30 : 10
+                                                            }}
+                                                        >
+                                                            {isSelected && isUnlocked && (
+                                                                <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-stone-900/90 text-white rounded-lg shadow-xl flex gap-1 p-1 text-xs border border-stone-600 animate-fade-in pointer-events-auto">
+                                                                    <button onClick={() => updateItemTransform(item.id, 'scale', 1)} className="p-1.5 hover:bg-stone-700 rounded"><i className="fa-solid fa-magnifying-glass-plus"></i></button>
+                                                                    <button onClick={() => updateItemTransform(item.id, 'scale', -1)} className="p-1.5 hover:bg-stone-700 rounded"><i className="fa-solid fa-magnifying-glass-minus"></i></button>
+                                                                    <div className="w-[1px] bg-stone-600 mx-1"></div>
+                                                                    <button onClick={() => updateItemTransform(item.id, 'rotate', -1)} className="p-1.5 hover:bg-stone-700 rounded"><i className="fa-solid fa-rotate-left"></i></button>
+                                                                    <button onClick={() => updateItemTransform(item.id, 'rotate', 1)} className="p-1.5 hover:bg-stone-700 rounded"><i className="fa-solid fa-rotate-right"></i></button>
+                                                                    <div className="w-[1px] bg-stone-600 mx-1"></div>
+                                                                    <button onClick={() => deleteItem(item.id)} className="p-1.5 text-rose-400 hover:bg-rose-900/50 rounded"><i className="fa-solid fa-trash-can"></i></button>
+                                                                </div>
+                                                            )}
+
+                                                            {item.type === 'text' && (
+                                                                <div className={`whitespace-nowrap text-xl font-semibold select-none ${getTextColorClass(item.color)} ${item.font}`}>
+                                                                    {item.content}
+                                                                </div>
+                                                            )}
+                                                            {item.type === 'sticker' && (
+                                                                <img src={item.content} className="w-16 h-16 object-contain select-none pointer-events-none drop-shadow-sm" draggable="false" />
+                                                            )}
+                                                            {item.type === 'image' && (
+                                                                <div className="p-2 bg-white shadow-md border border-stone-200 rotate-1 select-none pointer-events-none max-w-[200px]">
+                                                                    <img src={item.content} className="w-full h-auto" draggable="false" />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                                
+                                                {currentPage.items?.length === 0 && (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none">
+                                                        <i className="fa-solid fa-pen-nib text-5xl mb-4 text-stone-500"></i>
+                                                        <p className="font-handwriting text-2xl text-stone-600">Trang giấy trắng tinh...</p>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </main>
+
+                    {/* TOAST THÔNG BÁO */}
+                    {toast && (
+                        <div className="fixed bottom-5 right-5 bg-stone-900 text-amber-200 px-5 py-3 rounded-xl shadow-2xl border border-amber-500/50 z-50 flex items-center gap-3 animate-bounce">
+                            <i className="fa-solid fa-bell text-amber-500"></i>
+                            <span className="text-sm font-bold">{toast}</span>
+                        </div>
+                    )}
+
+                    {/* MODAL 1: TẠO TRANG */}
+                    {showCreateModal && (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+                            <form onSubmit={handleCreatePage} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
+                                <h3 className="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">📖 Tạo Trang Sách Của Bạn</h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs text-stone-400 mb-1">Tên hiển thị của bạn:</label>
+                                        <input name="author" required type="text" className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-2 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500" placeholder="VD: Huy Nè" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-stone-400 mb-1">Mật khẩu khóa trang này:</label>
+                                        <input name="password" required type="text" className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-2 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 font-mono" placeholder="VD: 12345" />
+                                        <p className="text-[10px] text-rose-400 mt-1">*Hãy nhớ pass này để tự sửa trang sau này!</p>
+                                    </div>
+                                    <div className="flex gap-2 pt-2">
+                                        <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 bg-stone-800 text-white py-2 rounded-xl text-sm font-bold">Hủy</button>
+                                        <button type="submit" className="flex-1 bg-amber-600 text-stone-950 py-2 rounded-xl text-sm font-bold">Thêm Trang Sổ</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* MODAL 2: MỞ KHÓA TRANG */}
+                    {showUnlockModal && (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+                            <form onSubmit={handleUnlock} className="bg-stone-900 border border-stone-700 p-6 rounded-3xl w-full max-w-sm shadow-2xl">
+                                <h3 className="text-lg font-bold text-amber-100 border-b border-stone-800 pb-3 mb-4">🔑 Mở Khóa Chỉnh Sửa</h3>
+                                <p className="text-xs text-stone-400 mb-4">Nhập mật mã để chỉnh sửa trang của <span className="font-bold text-amber-400">{currentPage?.author}</span>:</p>
+                                <input value={unlockInput} onChange={e => setUnlockInput(e.target.value)} type="password" className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-200 outline-none focus:ring-1 focus:ring-amber-500 font-mono text-center tracking-widest text-lg mb-4" placeholder="••••" />
+                                <div className="flex gap-2">
+                                    <button type="button" onClick={() => setShowUnlockModal(false)} className="flex-1 bg-stone-800 text-white py-2 rounded-xl text-sm font-bold">Đóng</button>
+                                    <button type="submit" className="flex-1 bg-emerald-600 text-white py-2 rounded-xl text-sm font-bold">Mở Khóa Nào!</button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
