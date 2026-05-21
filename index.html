@@ -505,11 +505,11 @@
                             <div className="bg-[#4a3525] p-3 md:p-5 rounded-[2rem] shadow-2xl border-[6px] border-[#2d1b13] relative overflow-hidden h-full min-h-[700px] flex">
                                 <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-stone-950 via-stone-800 to-transparent z-20 border-r border-black/30"></div>
                                 <div className="w-full h-full relative pl-6">
+                                    {/* Bỏ onClick={() => setSelectedItemId(null)} ở đây để tránh bị mất viền 4 góc khi nhả chuột */}
                                     <div 
                                         key={pageFlipKey} 
                                         ref={notebookRef}
                                         className="notebook-paper w-full h-full min-h-[660px] rounded-r-2xl shadow-inner relative overflow-hidden page-turn-enter"
-                                        onClick={() => setSelectedItemId(null)}
                                     >
                                         {!currentPage ? (
                                             <div className="absolute inset-0 flex flex-col items-center justify-center opacity-70 px-4 text-center">
@@ -541,11 +541,19 @@
                                                         >
                                                             {/* HỘP BAO QUANH PHẦN TỬ ĐỂ CHỨA NÚT Ở 4 GÓC */}
                                                             <div 
-                                                                className={`relative transition-transform duration-100 ${isSelected && isUnlocked ? 'ring-2 ring-dashed ring-amber-500 bg-white/30 p-1' : ''}`}
+                                                                className={`relative transition-transform duration-100 ${isSelected && isUnlocked ? 'ring-2 ring-dashed ring-amber-500 bg-white/40 p-2 rounded-lg' : ''}`}
                                                                 style={{ transform: `scale(${item.scale}) rotate(${item.rotate}deg)` }}
                                                             >
                                                                 {isSelected && isUnlocked && (
                                                                     <>
+                                                                        {/* NÚT HOÀN THÀNH (TÍCH XANH) - Ở TRÊN CÙNG ĐỂ CHỐT VỊ TRÍ */}
+                                                                        <button 
+                                                                            onPointerDown={(e) => { e.stopPropagation(); setSelectedItemId(null); }} 
+                                                                            className="absolute -top-12 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-emerald-500 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-emerald-600 hover:scale-105 pointer-events-auto transition z-50 font-bold text-xs gap-2 whitespace-nowrap"
+                                                                        >
+                                                                            <i className="fa-solid fa-check"></i> Đặt ở đây
+                                                                        </button>
+
                                                                         {/* THÙNG RÁC XÓA - GÓC DƯỚI PHẢI */}
                                                                         <button 
                                                                             onPointerDown={(e) => { e.stopPropagation(); deleteItem(item.id); }} 
@@ -557,25 +565,25 @@
                                                                         {/* PHÓNG TO - GÓC TRÊN PHẢI */}
                                                                         <button 
                                                                             onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'scale', 1); }} 
-                                                                            className="absolute -top-3 -right-3 w-6 h-6 bg-emerald-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-emerald-600 hover:scale-110 pointer-events-auto transition z-40"
+                                                                            className="absolute -top-3 -right-3 w-7 h-7 bg-emerald-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-emerald-600 hover:scale-110 pointer-events-auto transition z-40"
                                                                         >
-                                                                            <i className="fa-solid fa-plus text-[10px]"></i>
+                                                                            <i className="fa-solid fa-plus text-xs"></i>
                                                                         </button>
                                                                         
                                                                         {/* THU NHỎ - GÓC TRÊN TRÁI */}
                                                                         <button 
                                                                             onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'scale', -1); }} 
-                                                                            className="absolute -top-3 -left-3 w-6 h-6 bg-stone-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-stone-600 hover:scale-110 pointer-events-auto transition z-40"
+                                                                            className="absolute -top-3 -left-3 w-7 h-7 bg-stone-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-stone-600 hover:scale-110 pointer-events-auto transition z-40"
                                                                         >
-                                                                            <i className="fa-solid fa-minus text-[10px]"></i>
+                                                                            <i className="fa-solid fa-minus text-xs"></i>
                                                                         </button>
                                                                         
                                                                         {/* XOAY VÒNG - GÓC DƯỚI TRÁI */}
                                                                         <button 
                                                                             onPointerDown={(e) => { e.stopPropagation(); updateItemTransform(item.id, 'rotate', 1); }} 
-                                                                            className="absolute -bottom-3 -left-3 w-6 h-6 bg-sky-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-sky-600 hover:scale-110 pointer-events-auto transition z-40"
+                                                                            className="absolute -bottom-3 -left-3 w-7 h-7 bg-sky-500 text-white rounded-full shadow-md flex items-center justify-center hover:bg-sky-600 hover:scale-110 pointer-events-auto transition z-40"
                                                                         >
-                                                                            <i className="fa-solid fa-rotate-right text-[10px]"></i>
+                                                                            <i className="fa-solid fa-rotate-right text-xs"></i>
                                                                         </button>
                                                                     </>
                                                                 )}
